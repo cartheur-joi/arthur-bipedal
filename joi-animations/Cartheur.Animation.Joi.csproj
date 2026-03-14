@@ -1,0 +1,52 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <Nullable>disable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <ApplicationIcon>Resources\animals.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="lib\dxl_x64_c.dll" />
+    <None Remove="lib\dxl_x64_c.lib" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="lib\dxl_x64_c.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="lib\dxl_x64_c.lib">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\animals.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\dynamixel\Cartheur.Animals.Robot.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Controls\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="bin\Debug\net9.0-windows\logs\log.txt" />
+    <None Include="bin\Debug\net9.0-windows\logs\transcript.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.0" />
+    <PackageReference Include="System.IO.Ports" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Data.SQLite">
+      <HintPath>..\dynamixel\lib\System.Data.SQLite.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+</Project>
