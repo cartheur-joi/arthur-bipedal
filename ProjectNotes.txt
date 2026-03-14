@@ -3,4 +3,6 @@ Arthur-Bipedal
 
 14.03.2026
     1045: Starting a new push for a bipedal walking robot that is fully 3D printed.
+    1138: Integrated state of the art in past, now checking the GUI - Avalonia.
+    1146: Stopped beyond a first-implementation of Windoze forms to LinuxGUI.
     
