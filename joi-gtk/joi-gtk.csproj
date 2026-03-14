@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GtkSharp" Version="3.24.24.95" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\cartheur-animals-robot\lib\libdxl_x64_c.so" Link="lib\libdxl_x64_c.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\cartheur-animals-robot\lib\libdxl_arm64_c.so" Link="lib\libdxl_arm64_c.so">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\cartheur-animals-robot\Cartheur.Animals.Robot.csproj" />
+  </ItemGroup>
+</Project>
