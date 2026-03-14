@@ -7,8 +7,10 @@ namespace joi_gtk;
 
 public sealed class MainWindow : Window
 {
+    const string InitialLogMessage = "GTK# robot panel initialized.";
     readonly RobotControlService _robot = new();
-    readonly StringBuilder _log = new("GTK# robot panel initialized.");
+    readonly StringBuilder _log = new(InitialLogMessage);
+    bool _clearedInitialLog;
 
     readonly Label _statusLabel = new("Ready");
     readonly Entry _cyclesEntry = new() { Text = "1" };
@@ -27,6 +29,9 @@ public sealed class MainWindow : Window
         Box root = new(Orientation.Vertical, 8);
         Add(root);
 
+        MenuBar menuBar = BuildMenuBar();
+        root.PackStart(menuBar, false, false, 0);
+
         Label title = new("Arthur Bipedal - Linux Control Panel");
         title.Xalign = 0;
         root.PackStart(title, false, false, 0);
@@ -36,6 +41,7 @@ public sealed class MainWindow : Window
         actionRow.PackStart(CreateButton("Torque ON (Lower)", (_, _) => RunAction("TorqueOnLower", () => _robot.TorqueOnLower())), false, false, 0);
         actionRow.PackStart(CreateButton("Torque OFF (Lower)", (_, _) => RunAction("TorqueOffLower", () => _robot.TorqueOffLower())), false, false, 0);
         actionRow.PackStart(CreateButton("Read Lower Telemetry", (_, _) => RunAction("ReadLowerTelemetry", () => _robot.ReadLowerTelemetry())), false, false, 0);
+        actionRow.PackStart(CreateButton("Clear", (_, _) => ClearLogs()), false, false, 0);
         actionRow.PackStart(new Label("Status:") { Xalign = 0 }, false, false, 10);
         actionRow.PackStart(_statusLabel, false, false, 0);
         root.PackStart(actionRow, false, false, 0);
@@ -71,6 +77,64 @@ public sealed class MainWindow : Window
         Button button = new(text);
         button.Clicked += onClick;
         return button;
+    }
+
+    MenuBar BuildMenuBar()
+    {
+        MenuBar menuBar = new();
+
+        MenuItem fileMenuItem = new("_File");
+        Menu fileMenu = new();
+        MenuItem clearItem = new("Clear");
+        clearItem.Activated += (_, _) => ClearLogs();
+        MenuItem quitItem = new("Quit");
+        quitItem.Activated += (_, _) => Application.Quit();
+        fileMenu.Append(clearItem);
+        fileMenu.Append(new SeparatorMenuItem());
+        fileMenu.Append(quitItem);
+        fileMenuItem.Submenu = fileMenu;
+
+        MenuItem editMenuItem = new("_Edit");
+        Menu editMenu = new();
+        MenuItem copyLogItem = new("Copy Log");
+        copyLogItem.Activated += (_, _) =>
+        {
+            Clipboard clipboard = Clipboard.Get(Gdk.Atom.Intern("CLIPBOARD", false));
+            clipboard.Text = _log.ToString();
+        };
+        editMenu.Append(copyLogItem);
+        editMenuItem.Submenu = editMenu;
+
+        MenuItem helpMenuItem = new("_Help");
+        Menu helpMenu = new();
+        MenuItem aboutItem = new("About");
+        aboutItem.Activated += (_, _) =>
+        {
+            Dialog dialog = new("About", this, DialogFlags.Modal);
+            dialog.AddButton("OK", ResponseType.Ok);
+            dialog.SetDefaultSize(520, 180);
+            dialog.Resizable = false;
+
+            Label label = new(
+                "Arthur Bipedal Controller.\nCopyright 2021 - 2026 Cartheur Research, B.V.\nAll rights reserved.")
+            {
+                Justify = Justification.Center,
+                Xalign = 0.5f
+            };
+
+            dialog.ContentArea.BorderWidth = 16;
+            dialog.ContentArea.PackStart(label, true, true, 0);
+            dialog.ShowAll();
+            dialog.Run();
+            dialog.Destroy();
+        };
+        helpMenu.Append(aboutItem);
+        helpMenuItem.Submenu = helpMenu;
+
+        menuBar.Append(fileMenuItem);
+        menuBar.Append(editMenuItem);
+        menuBar.Append(helpMenuItem);
+        return menuBar;
     }
 
     void ExecuteThreeCycleWalk()
@@ -127,7 +191,9 @@ public sealed class MainWindow : Window
     void ValidationFail(string message)
     {
         _statusLabel.Text = "Validation: FAIL";
-        AppendLog($"{DateTime.Now:HH:mm:ss} [Validation] {message}");
+        string line = $"{DateTime.Now:HH:mm:ss} [Validation] {message}";
+        AppendLog(line);
+        WriteConsoleEntry(line);
     }
 
     void RunAction(string actionName, Func<string> action)
@@ -136,17 +202,27 @@ public sealed class MainWindow : Window
         {
             string result = action();
             _statusLabel.Text = $"{actionName}: OK";
-            AppendLog($"{DateTime.Now:HH:mm:ss} [{actionName}] {result}");
+            string line = $"{DateTime.Now:HH:mm:ss} [{actionName}] {result}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
         }
         catch (Exception ex)
         {
             _statusLabel.Text = $"{actionName}: FAIL";
-            AppendLog($"{DateTime.Now:HH:mm:ss} [{actionName}] ERROR: {ex.Message}");
+            string line = $"{DateTime.Now:HH:mm:ss} [{actionName}] ERROR: {ex.Message}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
         }
     }
 
     void AppendLog(string line)
     {
+        if (!_clearedInitialLog)
+        {
+            _log.Clear();
+            _clearedInitialLog = true;
+        }
+
         _log.AppendLine(line);
         SetLog(_log.ToString());
     }
@@ -157,5 +233,19 @@ public sealed class MainWindow : Window
             _logView.Buffer = new TextBuffer(new TextTagTable());
 
         _logView.Buffer.Text = text;
+    }
+
+    void ClearLogs()
+    {
+        _log.Clear();
+        _clearedInitialLog = true;
+        SetLog(string.Empty);
+        Console.Write("\u001b[2J\u001b[H");
+    }
+
+    static void WriteConsoleEntry(string line)
+    {
+        Console.WriteLine();
+        Console.WriteLine(line);
     }
 }
