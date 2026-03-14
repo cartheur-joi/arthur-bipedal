@@ -26,7 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\dynamixel\Cartheur.Animals.Robot.csproj" />
+    <ProjectReference Include="..\cartheur-animals-robot\Cartheur.Animals.Robot.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -45,7 +45,7 @@
 
   <ItemGroup>
     <Reference Include="System.Data.SQLite">
-      <HintPath>..\dynamixel\lib\System.Data.SQLite.dll</HintPath>
+      <HintPath>..\cartheur-animals-robot\lib\System.Data.SQLite.dll</HintPath>
     </Reference>
   </ItemGroup>
 

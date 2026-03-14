@@ -5,7 +5,7 @@ VisualStudioVersion = 17.14.36717.8 d17.14
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cartheur.Animation.Joi", "joi-animations\Cartheur.Animation.Joi.csproj", "{4E514298-D5FA-0D45-2508-A208E4AAD83A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cartheur.Animals.Robot", "dynamixel\Cartheur.Animals.Robot.csproj", "{BEB7F80F-4F0E-B171-5254-46BAD5868EB4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cartheur.Animals.Robot", "cartheur-animals-robot\Cartheur.Animals.Robot.csproj", "{BEB7F80F-4F0E-B171-5254-46BAD5868EB4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
