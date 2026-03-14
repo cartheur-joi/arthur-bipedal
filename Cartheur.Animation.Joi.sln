@@ -7,8 +7,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cartheur.Animation.Joi", "j
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cartheur.Animals.Robot", "cartheur-animals-robot\Cartheur.Animals.Robot.csproj", "{BEB7F80F-4F0E-B171-5254-46BAD5868EB4}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "joi-avalonia", "joi-avalonia\joi-avalonia.csproj", "{DC8263E1-C686-43E6-97EC-1DADCC5FA2C4}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "joi-gtk", "joi-gtk\joi-gtk.csproj", "{4D0B8D08-2126-4A31-90D2-4A4DE52BC1D6}"
 EndProject
 Global
@@ -25,10 +23,6 @@ Global
 		{BEB7F80F-4F0E-B171-5254-46BAD5868EB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{BEB7F80F-4F0E-B171-5254-46BAD5868EB4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{BEB7F80F-4F0E-B171-5254-46BAD5868EB4}.Release|Any CPU.Build.0 = Release|Any CPU
-		{DC8263E1-C686-43E6-97EC-1DADCC5FA2C4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DC8263E1-C686-43E6-97EC-1DADCC5FA2C4}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DC8263E1-C686-43E6-97EC-1DADCC5FA2C4}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DC8263E1-C686-43E6-97EC-1DADCC5FA2C4}.Release|Any CPU.Build.0 = Release|Any CPU
 		{4D0B8D08-2126-4A31-90D2-4A4DE52BC1D6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{4D0B8D08-2126-4A31-90D2-4A4DE52BC1D6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4D0B8D08-2126-4A31-90D2-4A4DE52BC1D6}.Release|Any CPU.ActiveCfg = Release|Any CPU
