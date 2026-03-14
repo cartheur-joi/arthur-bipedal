@@ -1,0 +1,6 @@
+March 2026
+Arthur-Bipedal
+
+14.03.2026
+    1045: Starting a new push for a bipedal walking robot that is fully 3D printed.
+    
