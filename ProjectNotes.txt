@@ -14,4 +14,5 @@ Arthur-Bipedal
     1104: Want to grab an image of the existing windoze screens for reference.
     1105: First target today is the Animation Training as this seems to touch on all the points: Remember, Action, Movement, db.
     1308: First pass at an implementation of the robot monitoring feature.
+    1458: Sorting ttyUSB so that some intelligence on port probing is clear. Might be helpful for other issues.
     
