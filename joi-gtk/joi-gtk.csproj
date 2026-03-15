@@ -10,6 +10,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="Services/DirectShow.cs" />
+    <Compile Remove="Services/PropertyItems.cs" />
+    <Compile Remove="Services/UsbCamera.cs" />
+    <Compile Remove="Services/FlashButton.cs" />
+    <Compile Remove="Services/FlashButton.Designer.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="..\cartheur-animals-robot\lib\libdxl_x64_c.so" Link="lib\libdxl_x64_c.so">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

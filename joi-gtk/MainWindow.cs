@@ -36,6 +36,7 @@ public sealed class MainWindow : Window
     readonly Dictionary<string, EventBox> _motorIndicators = new();
     readonly Frame _monitoringFrame;
     AnimationTrainingWindow _animationTrainingWindow;
+    CameraWindow _cameraWindow;
     uint _monitorTimerId;
     string _lastOverloadFingerprint = string.Empty;
     bool _flashPhase;
@@ -64,6 +65,7 @@ public sealed class MainWindow : Window
         Box actionRow = new(Orientation.Horizontal, 8);
         actionRow.PackStart(CreateButton("Initialize", (_, _) => RunAction("Initialize", () => _robot.Initialize())), false, false, 0);
         actionRow.PackStart(CreateButton("Animation Training", (_, _) => OpenAnimationTrainingWindow()), false, false, 0);
+        actionRow.PackStart(CreateButton("Camera Feed", (_, _) => OpenCameraWindow()), false, false, 0);
         actionRow.PackStart(CreateButton("View Robot Monitor", (_, _) => ShowRobotMonitor()), false, false, 0);
         actionRow.PackStart(CreateButton("Torque ON (Lower)", (_, _) => RunAction("TorqueOnLower", () => _robot.TorqueOnLower())), false, false, 0);
         actionRow.PackStart(CreateButton("Torque OFF (Lower)", (_, _) => RunAction("TorqueOffLower", () => _robot.TorqueOffLower())), false, false, 0);
@@ -314,6 +316,31 @@ public sealed class MainWindow : Window
         {
             _statusLabel.Text = "AnimationTraining: FAIL";
             string line = $"[AnimationTraining] ERROR: {ex.Message}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
+        }
+    }
+
+    void OpenCameraWindow()
+    {
+        try
+        {
+            if (_cameraWindow == null || !_cameraWindow.Visible)
+            {
+                _cameraWindow = new CameraWindow
+                {
+                    TransientFor = this
+                };
+                _cameraWindow.ShowAll();
+                return;
+            }
+
+            _cameraWindow.Present();
+        }
+        catch (Exception ex)
+        {
+            _statusLabel.Text = "Camera: FAIL";
+            string line = $"[Camera] ERROR: {ex.Message}";
             AppendLog(line);
             WriteConsoleEntry(line);
         }
