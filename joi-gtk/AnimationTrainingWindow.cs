@@ -10,12 +10,14 @@ namespace joi_gtk;
 public sealed class AnimationTrainingWindow : Window
 {
     readonly AnimationTrainingService _training;
+    readonly PocketSphinxVoiceCommandSource _voice = new();
     readonly StringBuilder _log = new();
 
     readonly ComboBoxText _armSelection = new();
     readonly Entry _replayPhraseEntry = new() { Text = "raise your left arm" };
     readonly Entry _stepIntervalEntry = new() { Text = "1000", WidthChars = 7 };
     readonly Label _statusLabel = new("Idle");
+    readonly Label _voiceStatusLabel = new("Voice: off");
     readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true };
     uint _captureTimerId;
 
@@ -27,8 +29,11 @@ public sealed class AnimationTrainingWindow : Window
         DeleteEvent += (_, e) =>
         {
             StopCaptureTimer();
+            _voice.Dispose();
             e.RetVal = false;
         };
+
+        _voice.PhraseDetected += OnPhraseDetected;
 
         Box root = new(Orientation.Vertical, 8);
         Add(root);
@@ -57,12 +62,15 @@ public sealed class AnimationTrainingWindow : Window
         config.Attach(new Label("Capture ms") { Xalign = 0 }, 0, 3, 1, 1);
         config.Attach(_stepIntervalEntry, 1, 3, 1, 1);
         config.Attach(_statusLabel, 2, 3, 1, 1);
+        config.Attach(_voiceStatusLabel, 2, 2, 1, 1);
         root.PackStart(config, false, false, 0);
 
         Box actionRow = new(Orientation.Horizontal, 8);
         actionRow.PackStart(CreateButton("Begin Animation Training", (_, _) => BeginTraining()), false, false, 0);
         actionRow.PackStart(CreateButton("Stop && Save", (_, _) => StopAndSave()), false, false, 0);
         actionRow.PackStart(CreateButton("Replay Phrase", (_, _) => ReplayPhrase()), false, false, 0);
+        actionRow.PackStart(CreateButton("Voice ON", (_, _) => StartVoiceListener()), false, false, 0);
+        actionRow.PackStart(CreateButton("Voice OFF", (_, _) => StopVoiceListener()), false, false, 0);
         actionRow.PackStart(CreateButton("Close", (_, _) => Close()), false, false, 0);
         root.PackStart(actionRow, false, false, 0);
 
@@ -75,6 +83,7 @@ public sealed class AnimationTrainingWindow : Window
         root.PackStart(logScroll, true, true, 0);
 
         AppendLog("Ready. Use 'Begin animation training' flow to capture arm poses.");
+        StartVoiceListener();
     }
 
     static Button CreateButton(string text, EventHandler onClick)
@@ -158,6 +167,51 @@ public sealed class AnimationTrainingWindow : Window
             _statusLabel.Text = "Replay: failed";
             AppendLog($"Replay ERROR: {ex.Message}");
         }
+    }
+
+    void StartVoiceListener()
+    {
+        string message = _voice.Start();
+        _voiceStatusLabel.Text = _voice.IsRunning ? "Voice: listening" : "Voice: unavailable";
+        AppendLog(message);
+    }
+
+    void StopVoiceListener()
+    {
+        string message = _voice.Stop();
+        _voiceStatusLabel.Text = "Voice: off";
+        AppendLog(message);
+    }
+
+    void OnPhraseDetected(string phrase, double confidence)
+    {
+        Application.Invoke(delegate
+        {
+            string normalized = phrase.Trim().ToLowerInvariant();
+            if (normalized.Length == 0)
+                return;
+
+            string confidenceText = confidence >= 0 ? confidence.ToString("0.00") : "n/a";
+            AppendLog($"Voice heard: \"{phrase}\" (p={confidenceText})");
+
+            if (normalized.Contains("begin animation training"))
+            {
+                BeginTraining();
+                return;
+            }
+
+            if (normalized.Contains("stop animation training"))
+            {
+                StopAndSave();
+                return;
+            }
+
+            string replayPhrase = (_replayPhraseEntry.Text ?? string.Empty).Trim().ToLowerInvariant();
+            if (replayPhrase.Length > 0 && normalized.Contains(replayPhrase))
+            {
+                ReplayPhrase();
+            }
+        });
     }
 
     bool TryGetCaptureInterval(out int intervalMs)
