@@ -21,7 +21,11 @@ public sealed class AnimationTrainingWindow : Window
     readonly Label _statusLabel = new("Idle");
     readonly Label _voiceStatusLabel = new("Voice: off");
     readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true, WrapMode = WrapMode.WordChar };
+    readonly Button _pauseTrainingButton;
     uint _captureTimerId;
+    int _captureIntervalMs;
+    bool _hasActiveSession;
+    bool _isPaused;
 
     public AnimationTrainingWindow(RobotControlService robot) : base("Animation Training")
     {
@@ -71,6 +75,9 @@ public sealed class AnimationTrainingWindow : Window
 
         Box actionRow = new(Orientation.Horizontal, 8);
         actionRow.PackStart(CreateButton("Begin Animation Training", (_, _) => BeginTraining()), false, false, 0);
+        _pauseTrainingButton = CreateButton("Pause Training", (_, _) => TogglePauseTraining());
+        _pauseTrainingButton.Sensitive = false;
+        actionRow.PackStart(_pauseTrainingButton, false, false, 0);
         actionRow.PackStart(CreateButton("Stop && Save", (_, _) => StopAndSave()), false, false, 0);
         actionRow.PackStart(CreateButton("Replay Phrase", (_, _) => ReplayPhrase()), false, false, 0);
         actionRow.PackStart(CreateButton("Voice ON", (_, _) => StartVoiceListener()), false, false, 0);
@@ -109,29 +116,17 @@ public sealed class AnimationTrainingWindow : Window
             string arm = _armSelection.ActiveText ?? "Left Arm";
             string replayPhrase = _replayPhraseEntry.Text;
             Dictionary<string, int> firstFrame = _training.BeginSession(arm, replayPhrase);
+            _captureIntervalMs = intervalMs;
+            _hasActiveSession = true;
+            _isPaused = false;
+            _pauseTrainingButton.Sensitive = true;
+            _pauseTrainingButton.Label = "Pause Training";
             _statusLabel.Text = "Training: awaiting input";
             BeepSignal();
             AppendLog($"Session started. arm={arm}, phrase=\"{replayPhrase}\"");
             LogFrame("Captured", firstFrame);
 
-            _captureTimerId = GLib.Timeout.Add((uint)intervalMs, () =>
-            {
-                try
-                {
-                    Dictionary<string, int> frame = _training.CaptureStep();
-                    _statusLabel.Text = $"Training: step {_training.CapturedFrameCount}";
-                    BeepSignal();
-                    LogFrame("Captured", frame);
-                    return true;
-                }
-                catch (Exception ex)
-                {
-                    _statusLabel.Text = "Training: failed";
-                    AppendLog($"Capture ERROR: {ex.Message}");
-                    StopCaptureTimer();
-                    return false;
-                }
-            });
+            StartCaptureTimer(_captureIntervalMs);
         }
         catch (Exception ex)
         {
@@ -176,6 +171,10 @@ public sealed class AnimationTrainingWindow : Window
         try
         {
             int frameCount = _training.StopAndSaveSession();
+            _hasActiveSession = false;
+            _isPaused = false;
+            _pauseTrainingButton.Sensitive = false;
+            _pauseTrainingButton.Label = "Pause Training";
             _statusLabel.Text = "Training: saved";
             BeepSignal();
             AppendLog($"Session saved ({frameCount} frames).");
@@ -185,6 +184,37 @@ public sealed class AnimationTrainingWindow : Window
             _statusLabel.Text = "Training: save failed";
             AppendLog($"Save ERROR: {ex.Message}");
         }
+    }
+
+    void TogglePauseTraining()
+    {
+        if (!_hasActiveSession)
+        {
+            AppendLog("No active training session to pause.");
+            return;
+        }
+
+        if (!_isPaused)
+        {
+            StopCaptureTimer();
+            _isPaused = true;
+            _pauseTrainingButton.Label = "Resume Training";
+            _statusLabel.Text = "Training: paused";
+            AppendLog("Training paused.");
+            return;
+        }
+
+        if (_captureIntervalMs < 200)
+        {
+            if (!TryGetCaptureInterval(out _captureIntervalMs))
+                return;
+        }
+
+        _isPaused = false;
+        _pauseTrainingButton.Label = "Pause Training";
+        _statusLabel.Text = "Training: resumed";
+        AppendLog("Training resumed.");
+        StartCaptureTimer(_captureIntervalMs);
     }
 
     void ReplayPhrase()
@@ -266,6 +296,29 @@ public sealed class AnimationTrainingWindow : Window
 
         GLib.Source.Remove(_captureTimerId);
         _captureTimerId = 0;
+    }
+
+    void StartCaptureTimer(int intervalMs)
+    {
+        StopCaptureTimer();
+        _captureTimerId = GLib.Timeout.Add((uint)intervalMs, () =>
+        {
+            try
+            {
+                Dictionary<string, int> frame = _training.CaptureStep();
+                _statusLabel.Text = $"Training: step {_training.CapturedFrameCount}";
+                BeepSignal();
+                LogFrame("Captured", frame);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _statusLabel.Text = "Training: failed";
+                AppendLog($"Capture ERROR: {ex.Message}");
+                StopCaptureTimer();
+                return false;
+            }
+        });
     }
 
     static void BeepSignal()
