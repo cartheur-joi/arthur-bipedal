@@ -89,6 +89,79 @@ public sealed class RobotControlService
         return "Emergency stop applied: lower-body torque disabled.";
     }
 
+    public IReadOnlyList<MotorMonitorReading> ReadMotorMonitoringSnapshot(int overloadThreshold)
+    {
+        EnsureNativeDynamixelPrerequisites();
+        EnsureInitialized("ReadMotorMonitoringSnapshot");
+        EnsureMaps();
+
+        List<MotorMonitorReading> snapshot = new(Motor.MotorContext.Count);
+        foreach ((string motorName, byte id) in Motor.MotorContext.OrderBy(kv => kv.Value))
+        {
+            string location = Motor.ReturnLocation(motorName);
+            int port = location == "upper" ? MotorFunctions.PortNumberUpper : MotorFunctions.PortNumberLower;
+            try
+            {
+                ushort rawLoad = _motorControl.GetPresentLoad(motorName);
+                ushort normalizedLoad = NormalizeLoad(rawLoad);
+                bool torqueOn = ReadTorqueStatus(port, id);
+                int txRxResult = Dynamixel.getLastTxRxResult(port, MotorFunctions.ProtocolVersion);
+                byte packetError = Dynamixel.getLastRxPacketError(port, MotorFunctions.ProtocolVersion);
+                bool communicationOk = txRxResult == MotorFunctions.ComSuccess && packetError == 0;
+                bool overload = communicationOk && torqueOn && normalizedLoad >= overloadThreshold;
+
+                snapshot.Add(new MotorMonitorReading(
+                    motorName,
+                    id,
+                    location,
+                    torqueOn,
+                    normalizedLoad,
+                    overload,
+                    communicationOk,
+                    communicationOk ? string.Empty : BuildTxRxDetail(txRxResult, packetError)));
+            }
+            catch (Exception ex)
+            {
+                snapshot.Add(new MotorMonitorReading(
+                    motorName,
+                    id,
+                    location,
+                    false,
+                    0,
+                    false,
+                    false,
+                    ex.Message));
+            }
+        }
+
+        return snapshot;
+    }
+
+    static ushort NormalizeLoad(ushort rawLoad)
+    {
+        return (ushort)(rawLoad & 1023);
+    }
+
+    static bool ReadTorqueStatus(int port, byte id)
+    {
+        byte torqueValue = Dynamixel.read1ByteTxRx(
+            port,
+            MotorFunctions.ProtocolVersion,
+            id,
+            (ushort)MotorFunctions.MxAddress);
+        return torqueValue == MotorFunctions.TorqueEnable;
+    }
+
+    static string BuildTxRxDetail(int txRxResult, byte packetError)
+    {
+        string txRxText = Marshal.PtrToStringAnsi(Dynamixel.getTxRxResult(MotorFunctions.ProtocolVersion, txRxResult)) ?? $"code {txRxResult}";
+        if (packetError == 0)
+            return txRxText;
+
+        string packetErrorText = Marshal.PtrToStringAnsi(Dynamixel.getRxPacketError(MotorFunctions.ProtocolVersion, packetError)) ?? $"packet_error {packetError}";
+        return $"{txRxText}; {packetErrorText}";
+    }
+
     static void EnsureNativeDynamixelPrerequisites()
     {
         string nativeFile = RuntimeInformation.ProcessArchitecture switch
@@ -154,4 +227,36 @@ public sealed class RobotControlService
         string detail = Marshal.PtrToStringAnsi(Dynamixel.getTxRxResult(MotorFunctions.ProtocolVersion, result)) ?? $"code {result}";
         throw new InvalidOperationException($"{actionName} failed: lower bus communication error ({detail}).");
     }
+}
+
+public sealed class MotorMonitorReading
+{
+    public MotorMonitorReading(
+        string motorName,
+        byte id,
+        string location,
+        bool torqueOn,
+        ushort load,
+        bool overload,
+        bool communicationOk,
+        string error)
+    {
+        MotorName = motorName;
+        ID = id;
+        Location = location;
+        TorqueOn = torqueOn;
+        Load = load;
+        Overload = overload;
+        CommunicationOk = communicationOk;
+        Error = error;
+    }
+
+    public string MotorName { get; }
+    public byte ID { get; }
+    public string Location { get; }
+    public bool TorqueOn { get; }
+    public ushort Load { get; }
+    public bool Overload { get; }
+    public bool CommunicationOk { get; }
+    public string Error { get; }
 }
