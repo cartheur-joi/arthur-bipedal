@@ -18,4 +18,5 @@ Arthur-Bipedal
     1505: Connectivity and reporting stable.
     1602: Doing singular limbic tests as a way to get started. Maybe the USB camera next.
     1621: Examining camera and not getting anywhere. Might need to address later.
+    1640: Did safety checks and range diagnostics where the habit is return to original position.
     
