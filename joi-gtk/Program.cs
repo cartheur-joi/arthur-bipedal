@@ -2,10 +2,12 @@ using Cartheur.Animals.Robot;
 using Gtk;
 using joi_gtk.Services;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace joi_gtk;
 
@@ -25,6 +27,21 @@ internal static class Program
         if (args.Length > 0 && string.Equals(args[0], "--probe", StringComparison.OrdinalIgnoreCase))
         {
             RunBusProbe();
+            return;
+        }
+        if (args.Length > 0 && string.Equals(args[0], "--ankle-sweep", StringComparison.OrdinalIgnoreCase))
+        {
+            RunAnkleSweepTest();
+            return;
+        }
+        if (args.Length > 1 && string.Equals(args[0], "--sweep", StringComparison.OrdinalIgnoreCase))
+        {
+            RunSingleMotorSweep(args[1]);
+            return;
+        }
+        if (args.Length > 1 && string.Equals(args[0], "--sweep-group", StringComparison.OrdinalIgnoreCase))
+        {
+            RunSweepGroup(args[1]);
             return;
         }
 
@@ -151,5 +168,108 @@ internal static class Program
 
         if (upperOpened) Dynamixel.closePort(upper);
         if (lowerOpened) Dynamixel.closePort(lower);
+    }
+
+    static void RunAnkleSweepTest()
+    {
+        RunSingleMotorSweep("r_ankle_y", "ANKLE");
+    }
+
+    static void RunSingleMotorSweep(string motor, string label = "SWEEP")
+    {
+        RobotControlService service = new();
+        Console.WriteLine(service.Initialize());
+
+        byte id = Motor.ReturnID(motor);
+        if (id == 0)
+            throw new InvalidOperationException($"Unknown motor '{motor}'.");
+        string location = Motor.ReturnLocation(motor);
+        int port = location == "upper" ? MotorFunctions.PortNumberUpper : MotorFunctions.PortNumberLower;
+        MotorFunctions.SetBaudRate(location);
+
+        ushort cwLimit = Dynamixel.read2ByteTxRx(port, MotorFunctions.ProtocolVersion, id, 6);
+        ushort ccwLimit = Dynamixel.read2ByteTxRx(port, MotorFunctions.ProtocolVersion, id, 8);
+        int current = service.ReadPositions(new[] { motor })[motor];
+        byte torqueBefore = Dynamixel.read1ByteTxRx(port, MotorFunctions.ProtocolVersion, id, (ushort)MotorFunctions.MxAddress);
+
+        Console.WriteLine($"{label}_SETUP motor={motor} id={id} zone={location} cw={cwLimit} ccw={ccwLimit} current={current} torque_before={(torqueBefore == 1 ? "ON" : "OFF")}");
+
+        service.SetTorqueOn(new[] { motor });
+        Thread.Sleep(100);
+
+        // Keep sweep local around the currently observed joint position to avoid hard-stop loading.
+        int margin = 50;
+        int safeSpanFromCurrent = 120;
+        int low = Math.Max(Math.Max(cwLimit + margin, 0), current - safeSpanFromCurrent);
+        int high = Math.Min(Math.Min(ccwLimit - margin, 4095), current + safeSpanFromCurrent);
+        if (high - low < 40)
+        {
+            low = Math.Max(Math.Max(cwLimit + 10, 0), current - 20);
+            high = Math.Min(Math.Min(ccwLimit - 10, 4095), current + 20);
+        }
+        if (high <= low)
+            throw new InvalidOperationException($"Invalid ankle sweep range: low={low}, high={high}, cw={cwLimit}, ccw={ccwLimit}, current={current}");
+
+        int mid = low + (high - low) / 2;
+        int[] targets = new[] { low, mid, high, mid, low };
+        Console.WriteLine($"{label}_TARGETS {string.Join(", ", targets)}");
+
+        for (int i = 0; i < targets.Length; i++)
+        {
+            int target = targets[i];
+            service.MoveToPositions(new Dictionary<string, int> { [motor] = target }, 1800, 10);
+
+            List<int> samples = new();
+            for (int s = 0; s < 8; s++)
+            {
+                Thread.Sleep(200);
+                samples.Add(service.ReadPositions(new[] { motor })[motor]);
+            }
+
+            Console.WriteLine($"{label}_STEP {i + 1} motor={motor} target={target} metrical={string.Join(" ", samples)}");
+        }
+
+        // Safety reset: always return to the original observed position.
+        service.MoveToPositions(new Dictionary<string, int> { [motor] = current }, 1800, 10);
+        List<int> returnSamples = new();
+        for (int s = 0; s < 8; s++)
+        {
+            Thread.Sleep(200);
+            returnSamples.Add(service.ReadPositions(new[] { motor })[motor]);
+        }
+        Console.WriteLine($"{label}_RETURN motor={motor} target={current} metrical={string.Join(" ", returnSamples)}");
+
+        if (torqueBefore != MotorFunctions.TorqueEnable)
+            service.SetTorqueOff(new[] { motor });
+
+        Console.WriteLine($"{label}_COMPLETE motor={motor}");
+    }
+
+    static void RunSweepGroup(string groupName)
+    {
+        Dictionary<string, string[]> groups = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["left-arm"] = Limbic.LeftArm,
+            ["right-arm"] = Limbic.RightArm,
+            ["head"] = Limbic.Head,
+            ["abdomen"] = Limbic.Abdomen,
+            ["left-leg"] = Limbic.LeftLeg,
+            ["right-leg"] = Limbic.RightLeg
+        };
+
+        if (!groups.TryGetValue(groupName, out string[] motors))
+            throw new InvalidOperationException($"Unknown group '{groupName}'. Valid groups: {string.Join(", ", groups.Keys)}");
+
+        foreach (string motor in motors)
+        {
+            try
+            {
+                RunSingleMotorSweep(motor, "GROUP_SWEEP");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"GROUP_SWEEP_ERROR motor={motor} error={ex.Message}");
+            }
+        }
     }
 }
