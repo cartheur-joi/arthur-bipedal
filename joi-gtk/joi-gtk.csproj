@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="GtkSharp" Version="3.24.24.95" />
+    <PackageReference Include="System.IO.Ports" Version="9.0.1" />
     <PackageReference Include="Supertoys.PocketSphinx" Version="1.0.3" />
   </ItemGroup>
 

@@ -44,6 +44,11 @@ internal static class Program
             RunSweepGroup(args[1]);
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--imu-probe", StringComparison.OrdinalIgnoreCase))
+        {
+            RunImuProbe();
+            return;
+        }
 
         Application.Init();
         MainWindow window = new();
@@ -270,6 +275,16 @@ internal static class Program
             {
                 Console.WriteLine($"GROUP_SWEEP_ERROR motor={motor} error={ex.Message}");
             }
+        }
+    }
+
+    static void RunImuProbe()
+    {
+        RobotControlService service = new();
+        for (int i = 0; i < 8; i++)
+        {
+            Console.WriteLine(service.ReadImuTelemetry());
+            Thread.Sleep(250);
         }
     }
 }

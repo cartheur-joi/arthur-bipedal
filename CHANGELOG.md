@@ -38,6 +38,12 @@ All notable changes to this project are documented in this file.
   - start/stop sweep controls.
 - Safe Sweep requires active monitoring and automatically returns the joint to the original position when stopping or on failure.
 
+### Added (IMU Serial + Balance Step)
+- Added serial MPU IMU provider in `joi-gtk/Services/SerialMpuImuProvider.cs` using USB serial input (default `/dev/ttyUSB2` at `115200`).
+- Wired IMU provider into `WalkController` initialization via `RobotControlService`.
+- Added `Read IMU` action in GTK main window for live parsed pitch/roll/yaw diagnostics.
+- Added `Balance Step` action in GTK main window to apply conservative ankle/hip compensation from IMU lean readings.
+
 ### Changed (Integration)
 - Updated solution/project wiring to reference `cartheur-animals-robot` instead of the removed `dynamixel` project:
   - `Cartheur.Animation.Joi.sln` now points to `cartheur-animals-robot/Cartheur.Animals.Robot.csproj`.

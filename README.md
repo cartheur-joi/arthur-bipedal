@@ -73,6 +73,32 @@ Rules:
 - Sweep uses motion safety checks (SafetyGate).
 - Stop or failure returns the motor to its original position.
 
+## MPU6050 Serial Integration (GTK)
+
+`joi-gtk` now supports MPU telemetry from an external Arduino bridge over USB serial.
+
+Default runtime configuration:
+
+- `ARTHUR_IMU_PORT=/dev/ttyUSB2`
+- `ARTHUR_IMU_BAUD=115200`
+
+Integration points:
+
+- `RobotControlService` wires the serial IMU provider into `WalkController` safety checks.
+- Main window includes:
+  - `Read IMU` button: shows current parsed pitch/roll/yaw and provider status.
+  - `Balance Step` button: applies a conservative compensation step using ankles/hips.
+
+Expected serial line format example:
+
+`Xs=...; Ys=...; Zs=...; Xc=...; Yc=...; Zc=...;`
+
+Current mapping:
+
+- `pitch <- Xc` (fallback `Xs`)
+- `roll <- Yc` (fallback `Ys`)
+- `yaw <- Zc` (fallback `Zs`)
+
 ## Solution Structure
 
 - `joi-animations/`: WinForms UI application (`Cartheur.Animation.Joi`)

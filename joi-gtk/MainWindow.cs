@@ -88,6 +88,8 @@ public sealed class MainWindow : Window
         actionRow.PackStart(CreateButton("Torque ON (Lower)", (_, _) => RunAction("TorqueOnLower", () => _robot.TorqueOnLower())), false, false, 0);
         actionRow.PackStart(CreateButton("Torque OFF (Lower)", (_, _) => RunAction("TorqueOffLower", () => _robot.TorqueOffLower())), false, false, 0);
         actionRow.PackStart(CreateButton("Read Lower Telemetry", (_, _) => RunAction("ReadLowerTelemetry", () => _robot.ReadLowerTelemetry())), false, false, 0);
+        actionRow.PackStart(CreateButton("Read IMU", (_, _) => RunAction("ReadIMU", () => _robot.ReadImuTelemetry())), false, false, 0);
+        actionRow.PackStart(CreateButton("Balance Step", (_, _) => RunAction("BalanceStep", () => _robot.ApplyStandingBalanceCompensationStep())), false, false, 0);
         actionRow.PackStart(CreateButton("Clear", (_, _) => ClearLogs()), false, false, 0);
         actionRow.PackStart(new Label("Status:") { Xalign = 0 }, false, false, 10);
         actionRow.PackStart(_statusLabel, false, false, 0);

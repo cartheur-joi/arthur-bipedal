@@ -12,6 +12,7 @@ public sealed class RobotControlService
 {
     readonly MotorFunctions _motorControl;
     readonly WalkController _walkController;
+    readonly IImuProvider _imuProvider;
     readonly object _initializeGate = new();
     readonly object _busIoGate = new();
     readonly Dictionary<string, int> _motorOverloadThresholds = new(StringComparer.Ordinal);
@@ -23,7 +24,8 @@ public sealed class RobotControlService
     public RobotControlService()
     {
         _motorControl = new MotorFunctions();
-        _walkController = new WalkController(_motorControl);
+        _imuProvider = BuildImuProvider();
+        _walkController = new WalkController(_motorControl, _imuProvider);
         LoadMotorOverloadThresholdPolicy();
         _safetyEventLogPath = ResolveSafetyEventLogPath();
     }
@@ -159,6 +161,60 @@ public sealed class RobotControlService
             _walkController.RequireSupportFootContact = requireSupportFootContact;
             bool success = _walkController.ExecuteWalkCycleSupervised(cycles, stepDurationMs, interpolationSteps, timeoutMs);
             return success ? "Supervised walk completed." : "Supervised walk aborted by safety checks.";
+        });
+    }
+
+    public string ReadImuTelemetry()
+    {
+        ImuSample sample = _imuProvider.GetSample();
+        string source = _imuProvider is SerialMpuImuProvider serial
+            ? serial.Status
+            : "provider=null";
+        if (!sample.IsValid)
+            return $"IMU sample unavailable ({source}).";
+
+        return
+            $"IMU pitch={sample.PitchDegrees:0.00} roll={sample.RollDegrees:0.00} yaw={sample.YawDegrees:0.00} ({source}).";
+    }
+
+    public string ApplyStandingBalanceCompensationStep()
+    {
+        string[] compensationMotors = { "l_ankle_y", "r_ankle_y", "l_hip_x", "r_hip_x" };
+        return ExecuteMotionWithSafety("BalanceCompensation", compensationMotors, () =>
+        {
+            ImuSample sample = _imuProvider.GetSample();
+            if (!sample.IsValid)
+                return "Balance compensation skipped: IMU sample unavailable.";
+
+            const double deadband = 1.5;
+            int pitchCommand = Math.Abs(sample.PitchDegrees) < deadband
+                ? 0
+                : Clamp((int)Math.Round(sample.PitchDegrees * 1.6), -20, 20);
+            int rollCommand = Math.Abs(sample.RollDegrees) < deadband
+                ? 0
+                : Clamp((int)Math.Round(sample.RollDegrees * 1.4), -20, 20);
+
+            if (pitchCommand == 0 && rollCommand == 0)
+                return $"Balance stable (pitch={sample.PitchDegrees:0.00}, roll={sample.RollDegrees:0.00}).";
+
+            Dictionary<string, int> current = _motorControl.GetPresentPositions(compensationMotors);
+            int lAnkle = ClampPosition(current["l_ankle_y"] - pitchCommand);
+            int rAnkle = ClampPosition(current["r_ankle_y"] - pitchCommand);
+            int lHip = ClampPosition(current["l_hip_x"] + rollCommand);
+            int rHip = ClampPosition(current["r_hip_x"] - rollCommand);
+
+            Dictionary<string, int> targets = new()
+            {
+                ["l_ankle_y"] = lAnkle,
+                ["r_ankle_y"] = rAnkle,
+                ["l_hip_x"] = lHip,
+                ["r_hip_x"] = rHip
+            };
+            _motorControl.MoveMotorSequenceSmooth(targets, 280, 5);
+
+            return
+                $"Balance compensation applied: pitch={sample.PitchDegrees:0.00}, roll={sample.RollDegrees:0.00}, " +
+                $"cmdPitch={pitchCommand}, cmdRoll={rollCommand}.";
         });
     }
 
@@ -576,6 +632,30 @@ public sealed class RobotControlService
 
         string detail = Marshal.PtrToStringAnsi(Dynamixel.getTxRxResult(MotorFunctions.ProtocolVersion, result)) ?? $"code {result}";
         throw new InvalidOperationException($"{actionName} failed: lower bus communication error ({detail}).");
+    }
+
+    static IImuProvider BuildImuProvider()
+    {
+        string port = Environment.GetEnvironmentVariable("ARTHUR_IMU_PORT") ?? "/dev/ttyUSB2";
+        int baud = 115200;
+        string baudRaw = Environment.GetEnvironmentVariable("ARTHUR_IMU_BAUD");
+        if (!string.IsNullOrWhiteSpace(baudRaw) && int.TryParse(baudRaw, out int parsedBaud) && parsedBaud > 0)
+            baud = parsedBaud;
+
+        return new SerialMpuImuProvider(port, baud);
+    }
+
+    static int Clamp(int value, int min, int max)
+    {
+        if (value < min) return min;
+        if (value > max) return max;
+        return value;
+    }
+
+    static int ClampPosition(int value)
+    {
+        // Conservative 10-bit guard used by existing gait and standing utilities.
+        return Clamp(value, 0, 1023);
     }
 }
 
