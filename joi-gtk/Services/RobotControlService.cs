@@ -31,7 +31,14 @@ public sealed class RobotControlService
 
         int respondingLowerMotors = ScanLowerMotors();
         _initialized = true;
-        return $"{result} Lower motor scan OK ({respondingLowerMotors} responding).";
+        IReadOnlyList<MotorMonitorReading> snapshot = ReadMotorMonitoringSnapshot(MotorFunctions.PresentLoadAlarm);
+        int respondingUpperMotors = snapshot.Count(r => r.Location == "upper" && r.CommunicationOk);
+        int communicationErrors = snapshot.Count(r => !r.CommunicationOk);
+        int overloads = snapshot.Count(r => r.Overload);
+        return
+            $"{result} Lower motor scan OK ({respondingLowerMotors} responding). " +
+            $"Upper motor scan OK ({respondingUpperMotors} responding). " +
+            $"Errors={communicationErrors}, Overloads={overloads}.";
     }
 
     public string TorqueOnLower()
