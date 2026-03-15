@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace joi_gtk;
 
@@ -38,6 +39,7 @@ public sealed class MainWindow : Window
     uint _monitorTimerId;
     string _lastOverloadFingerprint = string.Empty;
     bool _flashPhase;
+    bool _monitorPollInProgress;
 
     public MainWindow() : base("Arthur Bipedal - Linux Control Panel (GTK#)")
     {
@@ -476,51 +478,68 @@ public sealed class MainWindow : Window
         if (!TryGetOverloadThreshold(out int threshold))
             return;
 
-        try
+        if (_monitorPollInProgress)
+            return;
+
+        _monitorPollInProgress = true;
+        _ = Task.Run(() =>
         {
-            IReadOnlyList<MotorMonitorReading> snapshot = _robot.ReadMotorMonitoringSnapshot(threshold);
-            RenderSnapshot(snapshot);
-
-            var overloads = snapshot
-                .Where(r => r.Overload)
-                .Select(r => $"{r.MotorName}({r.Load})")
-                .ToArray();
-
-            string overloadFingerprint = string.Join("|", overloads);
-            if (overloads.Length > 0)
+            try
             {
-                _statusLabel.Text = "Monitoring: ALERT";
-                _monitorSummaryLabel.Text = $"Overload(s): {overloads.Length}";
-                if (_lastOverloadFingerprint != overloadFingerprint)
+                IReadOnlyList<MotorMonitorReading> snapshot = _robot.ReadMotorMonitoringSnapshot(threshold);
+                Application.Invoke(delegate
                 {
-                    string line = $"[{actionName}] OVERLOAD {string.Join(", ", overloads)}";
+                    RenderSnapshot(snapshot);
+
+                    var overloads = snapshot
+                        .Where(r => r.Overload)
+                        .Select(r => $"{r.MotorName}({r.Load})")
+                        .ToArray();
+
+                    string overloadFingerprint = string.Join("|", overloads);
+                    if (overloads.Length > 0)
+                    {
+                        _statusLabel.Text = "Monitoring: ALERT";
+                        _monitorSummaryLabel.Text = $"Overload(s): {overloads.Length}";
+                        if (_lastOverloadFingerprint != overloadFingerprint)
+                        {
+                            string line = $"[{actionName}] OVERLOAD {string.Join(", ", overloads)}";
+                            AppendLog(line);
+                            WriteConsoleEntry(line);
+                        }
+                    }
+                    else
+                    {
+                        _statusLabel.Text = "Monitoring: OK";
+                        _monitorSummaryLabel.Text = "No overloads";
+                        if (logWhenNoAlert)
+                        {
+                            string line = $"[{actionName}] Snapshot OK ({snapshot.Count} motors).";
+                            AppendLog(line);
+                            WriteConsoleEntry(line);
+                        }
+                    }
+
+                    _lastOverloadFingerprint = overloadFingerprint;
+                });
+            }
+            catch (Exception ex)
+            {
+                Application.Invoke(delegate
+                {
+                    _statusLabel.Text = "Monitoring: FAIL";
+                    _monitorSummaryLabel.Text = "Monitoring error";
+                    string line = $"[{actionName}] ERROR: {ex.Message}";
                     AppendLog(line);
                     WriteConsoleEntry(line);
-                }
+                    StopMonitoring();
+                });
             }
-            else
+            finally
             {
-                _statusLabel.Text = "Monitoring: OK";
-                _monitorSummaryLabel.Text = "No overloads";
-                if (logWhenNoAlert)
-                {
-                    string line = $"[{actionName}] Snapshot OK ({snapshot.Count} motors).";
-                    AppendLog(line);
-                    WriteConsoleEntry(line);
-                }
+                _monitorPollInProgress = false;
             }
-
-            _lastOverloadFingerprint = overloadFingerprint;
-        }
-        catch (Exception ex)
-        {
-            _statusLabel.Text = "Monitoring: FAIL";
-            _monitorSummaryLabel.Text = "Monitoring error";
-            string line = $"[{actionName}] ERROR: {ex.Message}";
-            AppendLog(line);
-            WriteConsoleEntry(line);
-            StopMonitoring();
-        }
+        });
     }
 
     bool TryGetOverloadThreshold(out int threshold)

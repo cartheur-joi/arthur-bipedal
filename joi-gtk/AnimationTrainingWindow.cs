@@ -20,12 +20,17 @@ public sealed class AnimationTrainingWindow : Window
     readonly Entry _stepIntervalEntry = new() { Text = "1000", WidthChars = 7 };
     readonly Label _statusLabel = new("Idle");
     readonly Label _voiceStatusLabel = new("Voice: off");
+    readonly Label _safetyStatusLabel = new("Safety: not started");
     readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true, WrapMode = WrapMode.WordChar };
     readonly Button _pauseTrainingButton;
     uint _captureTimerId;
+    uint _safetyTimerId;
     int _captureIntervalMs;
     bool _hasActiveSession;
     bool _isPaused;
+    bool _safetyPollInProgress;
+    int _lastSafetyErrorCount = -1;
+    int _lastSafetyOverloadCount = -1;
 
     public AnimationTrainingWindow(RobotControlService robot) : base("Animation Training")
     {
@@ -36,6 +41,7 @@ public sealed class AnimationTrainingWindow : Window
         DeleteEvent += (_, e) =>
         {
             StopCaptureTimer();
+            StopSafetyPolling();
             _voice.Dispose();
             e.RetVal = false;
         };
@@ -71,6 +77,7 @@ public sealed class AnimationTrainingWindow : Window
         config.Attach(_stepIntervalEntry, 1, 3, 1, 1);
         config.Attach(_statusLabel, 2, 3, 1, 1);
         config.Attach(_voiceStatusLabel, 2, 2, 1, 1);
+        config.Attach(_safetyStatusLabel, 1, 4, 2, 1);
         root.PackStart(config, false, false, 0);
 
         Box actionRow = new(Orientation.Horizontal, 8);
@@ -95,6 +102,7 @@ public sealed class AnimationTrainingWindow : Window
 
         AppendLog("Ready. Use 'Begin animation training' flow to capture arm poses.");
         StartVoiceListener();
+        StartSafetyPolling();
     }
 
     static Button CreateButton(string text, EventHandler onClick)
@@ -152,6 +160,7 @@ public sealed class AnimationTrainingWindow : Window
                 {
                     _statusLabel.Text = "Idle";
                     AppendLog(result);
+                    PollSafetySnapshot();
                 });
             }
             catch (Exception ex)
@@ -245,6 +254,72 @@ public sealed class AnimationTrainingWindow : Window
         string message = _voice.Stop();
         _voiceStatusLabel.Text = "Voice: off";
         AppendLog(message);
+    }
+
+    void StartSafetyPolling()
+    {
+        if (_safetyTimerId != 0)
+            return;
+
+        _safetyTimerId = GLib.Timeout.Add(1000, () =>
+        {
+            PollSafetySnapshot();
+            return true;
+        });
+    }
+
+    void StopSafetyPolling()
+    {
+        if (_safetyTimerId == 0)
+            return;
+
+        GLib.Source.Remove(_safetyTimerId);
+        _safetyTimerId = 0;
+    }
+
+    void PollSafetySnapshot()
+    {
+        if (!_robot.IsInitialized || _safetyPollInProgress)
+            return;
+
+        _safetyPollInProgress = true;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                IReadOnlyList<MotorMonitorReading> snapshot = _robot.ReadMotorMonitoringSnapshot(900);
+                int errors = snapshot.Count(r => !r.CommunicationOk);
+                int overloads = snapshot.Count(r => r.Overload);
+
+                Application.Invoke(delegate
+                {
+                    _safetyStatusLabel.Text = $"Safety: errors={errors}, overloads={overloads}";
+                    if (errors != _lastSafetyErrorCount || overloads != _lastSafetyOverloadCount)
+                    {
+                        AppendLog($"Safety update: errors={errors}, overloads={overloads}");
+                    }
+                    if (overloads > 0)
+                    {
+                        _statusLabel.Text = "Safety: OVERLOAD";
+                        BeepSignal();
+                    }
+                    _lastSafetyErrorCount = errors;
+                    _lastSafetyOverloadCount = overloads;
+                });
+            }
+            catch (Exception ex)
+            {
+                Application.Invoke(delegate
+                {
+                    _safetyStatusLabel.Text = "Safety: unavailable";
+                    AppendLog($"Safety monitor ERROR: {ex.Message}");
+                });
+            }
+            finally
+            {
+                _safetyPollInProgress = false;
+            }
+        });
     }
 
     void OnPhraseDetected(string phrase, double confidence)

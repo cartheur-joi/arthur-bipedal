@@ -12,6 +12,7 @@ public sealed class RobotControlService
     readonly MotorFunctions _motorControl;
     readonly WalkController _walkController;
     readonly object _initializeGate = new();
+    readonly object _busIoGate = new();
     bool _initialized;
 
     public RobotControlService()
@@ -52,151 +53,153 @@ public sealed class RobotControlService
 
     public string TorqueOnLower()
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("TorqueOnLower");
-        EnsureMaps();
-        VerifyLowerBus("TorqueOnLower");
-        _motorControl.SetTorqueOn("lower");
-        EnsureLastTxRxSuccessOnLower("TorqueOnLower");
-        return "Lower-body torque enabled.";
+        return ExecuteOnBus("TorqueOnLower", () =>
+        {
+            VerifyLowerBus("TorqueOnLower");
+            _motorControl.SetTorqueOn("lower");
+            EnsureLastTxRxSuccessOnLower("TorqueOnLower");
+            return "Lower-body torque enabled.";
+        });
     }
 
     public string TorqueOffLower()
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("TorqueOffLower");
-        EnsureMaps();
-        VerifyLowerBus("TorqueOffLower");
-        _motorControl.SetTorqueOff("lower");
-        EnsureLastTxRxSuccessOnLower("TorqueOffLower");
-        return "Lower-body torque disabled.";
+        return ExecuteOnBus("TorqueOffLower", () =>
+        {
+            VerifyLowerBus("TorqueOffLower");
+            _motorControl.SetTorqueOff("lower");
+            EnsureLastTxRxSuccessOnLower("TorqueOffLower");
+            return "Lower-body torque disabled.";
+        });
     }
 
     public string ReadLowerTelemetry()
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("ReadLowerTelemetry");
-        EnsureMaps();
-        VerifyLowerBus("ReadLowerTelemetry");
-        Dictionary<string, int> snapshot = _motorControl.GetPresentPositions(Limbic.LeftLeg);
-        foreach (KeyValuePair<string, int> kv in _motorControl.GetPresentPositions(Limbic.RightLeg))
-            snapshot[kv.Key] = kv.Value;
+        return ExecuteOnBus("ReadLowerTelemetry", () =>
+        {
+            VerifyLowerBus("ReadLowerTelemetry");
+            Dictionary<string, int> snapshot = _motorControl.GetPresentPositions(Limbic.LeftLeg);
+            foreach (KeyValuePair<string, int> kv in _motorControl.GetPresentPositions(Limbic.RightLeg))
+                snapshot[kv.Key] = kv.Value;
 
-        return "Lower pose: " + string.Join(", ", snapshot.Select(kv => $"{kv.Key}={kv.Value}"));
+            return "Lower pose: " + string.Join(", ", snapshot.Select(kv => $"{kv.Key}={kv.Value}"));
+        });
     }
 
     public Dictionary<string, int> ReadPositions(string[] motors)
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("ReadPositions");
-        EnsureMaps();
-        if (motors == null || motors.Length == 0)
-            throw new InvalidOperationException("ReadPositions requires one or more motors.");
+        return ExecuteOnBus("ReadPositions", () =>
+        {
+            if (motors == null || motors.Length == 0)
+                throw new InvalidOperationException("ReadPositions requires one or more motors.");
 
-        return _motorControl.GetPresentPositions(motors);
+            return _motorControl.GetPresentPositions(motors);
+        });
     }
 
     public void SetTorqueOff(string[] motors)
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("SetTorqueOff");
-        EnsureMaps();
-        if (motors == null || motors.Length == 0)
-            throw new InvalidOperationException("SetTorqueOff requires one or more motors.");
+        ExecuteOnBus("SetTorqueOff", () =>
+        {
+            if (motors == null || motors.Length == 0)
+                throw new InvalidOperationException("SetTorqueOff requires one or more motors.");
 
-        _motorControl.SetTorqueOff(motors);
+            _motorControl.SetTorqueOff(motors);
+            return true;
+        });
     }
 
     public void SetTorqueOn(string[] motors)
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("SetTorqueOn");
-        EnsureMaps();
-        if (motors == null || motors.Length == 0)
-            throw new InvalidOperationException("SetTorqueOn requires one or more motors.");
+        ExecuteOnBus("SetTorqueOn", () =>
+        {
+            if (motors == null || motors.Length == 0)
+                throw new InvalidOperationException("SetTorqueOn requires one or more motors.");
 
-        _motorControl.SetTorqueOn(motors);
+            _motorControl.SetTorqueOn(motors);
+            return true;
+        });
     }
 
     public void MoveToPositions(Dictionary<string, int> targets, int durationMilliseconds = 700, int interpolationSteps = 6)
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("MoveToPositions");
-        EnsureMaps();
-        if (targets == null || targets.Count == 0)
-            throw new InvalidOperationException("MoveToPositions requires one or more target motors.");
+        ExecuteOnBus("MoveToPositions", () =>
+        {
+            if (targets == null || targets.Count == 0)
+                throw new InvalidOperationException("MoveToPositions requires one or more target motors.");
 
-        _motorControl.MoveMotorSequenceSmooth(targets, durationMilliseconds, interpolationSteps);
+            _motorControl.MoveMotorSequenceSmooth(targets, durationMilliseconds, interpolationSteps);
+            return true;
+        });
     }
 
     public string ExecuteWalkCycleSupervised(int cycles, int stepDurationMs, int interpolationSteps, int timeoutMs, bool requireSupportFootContact)
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("ExecuteSupervisedWalk");
-        EnsureMaps();
-        VerifyLowerBus("ExecuteSupervisedWalk");
-        _walkController.RequireSupportFootContact = requireSupportFootContact;
-        bool success = _walkController.ExecuteWalkCycleSupervised(cycles, stepDurationMs, interpolationSteps, timeoutMs);
-        return success ? "Supervised walk completed." : "Supervised walk aborted by safety checks.";
+        return ExecuteOnBus("ExecuteSupervisedWalk", () =>
+        {
+            VerifyLowerBus("ExecuteSupervisedWalk");
+            _walkController.RequireSupportFootContact = requireSupportFootContact;
+            bool success = _walkController.ExecuteWalkCycleSupervised(cycles, stepDurationMs, interpolationSteps, timeoutMs);
+            return success ? "Supervised walk completed." : "Supervised walk aborted by safety checks.";
+        });
     }
 
     public string EmergencyStopLower()
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("EmergencyStop");
-        EnsureMaps();
-        VerifyLowerBus("EmergencyStop");
-        _motorControl.SetTorqueOff("lower");
-        EnsureLastTxRxSuccessOnLower("EmergencyStop");
-        return "Emergency stop applied: lower-body torque disabled.";
+        return ExecuteOnBus("EmergencyStop", () =>
+        {
+            VerifyLowerBus("EmergencyStop");
+            _motorControl.SetTorqueOff("lower");
+            EnsureLastTxRxSuccessOnLower("EmergencyStop");
+            return "Emergency stop applied: lower-body torque disabled.";
+        });
     }
 
     public IReadOnlyList<MotorMonitorReading> ReadMotorMonitoringSnapshot(int overloadThreshold)
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureInitialized("ReadMotorMonitoringSnapshot");
-        EnsureMaps();
-
-        List<MotorMonitorReading> snapshot = new(Motor.MotorContext.Count);
-        foreach ((string motorName, byte id) in Motor.MotorContext.OrderBy(kv => kv.Value))
+        return ExecuteOnBus("ReadMotorMonitoringSnapshot", () =>
         {
-            string location = Motor.ReturnLocation(motorName);
-            int port = location == "upper" ? MotorFunctions.PortNumberUpper : MotorFunctions.PortNumberLower;
-            try
+            List<MotorMonitorReading> snapshot = new(Motor.MotorContext.Count);
+            foreach ((string motorName, byte id) in Motor.MotorContext.OrderBy(kv => kv.Value))
             {
-                ushort rawLoad = _motorControl.GetPresentLoad(motorName);
-                ushort normalizedLoad = NormalizeLoad(rawLoad);
-                bool torqueOn = ReadTorqueStatus(port, id);
-                int txRxResult = Dynamixel.getLastTxRxResult(port, MotorFunctions.ProtocolVersion);
-                byte packetError = Dynamixel.getLastRxPacketError(port, MotorFunctions.ProtocolVersion);
-                bool communicationOk = txRxResult == MotorFunctions.ComSuccess && packetError == 0;
-                bool overload = communicationOk && torqueOn && normalizedLoad >= overloadThreshold;
+                string location = Motor.ReturnLocation(motorName);
+                int port = location == "upper" ? MotorFunctions.PortNumberUpper : MotorFunctions.PortNumberLower;
+                try
+                {
+                    ushort rawLoad = _motorControl.GetPresentLoad(motorName);
+                    ushort normalizedLoad = NormalizeLoad(rawLoad);
+                    bool torqueOn = ReadTorqueStatus(port, id);
+                    int txRxResult = Dynamixel.getLastTxRxResult(port, MotorFunctions.ProtocolVersion);
+                    byte packetError = Dynamixel.getLastRxPacketError(port, MotorFunctions.ProtocolVersion);
+                    bool communicationOk = txRxResult == MotorFunctions.ComSuccess && packetError == 0;
+                    bool overload = communicationOk && torqueOn && normalizedLoad >= overloadThreshold;
 
-                snapshot.Add(new MotorMonitorReading(
-                    motorName,
-                    id,
-                    location,
-                    torqueOn,
-                    normalizedLoad,
-                    overload,
-                    communicationOk,
-                    communicationOk ? string.Empty : BuildTxRxDetail(txRxResult, packetError)));
+                    snapshot.Add(new MotorMonitorReading(
+                        motorName,
+                        id,
+                        location,
+                        torqueOn,
+                        normalizedLoad,
+                        overload,
+                        communicationOk,
+                        communicationOk ? string.Empty : BuildTxRxDetail(txRxResult, packetError)));
+                }
+                catch (Exception ex)
+                {
+                    snapshot.Add(new MotorMonitorReading(
+                        motorName,
+                        id,
+                        location,
+                        false,
+                        0,
+                        false,
+                        false,
+                        ex.Message));
+                }
             }
-            catch (Exception ex)
-            {
-                snapshot.Add(new MotorMonitorReading(
-                    motorName,
-                    id,
-                    location,
-                    false,
-                    0,
-                    false,
-                    false,
-                    ex.Message));
-            }
-        }
 
-        return snapshot;
+            return snapshot;
+        });
     }
 
     static ushort NormalizeLoad(ushort rawLoad)
@@ -245,6 +248,17 @@ public sealed class RobotControlService
     {
         if (Motor.MotorContext == null || Motor.MotorContext.Count == 0)
             MotorFunctions.CollateMotorArray();
+    }
+
+    T ExecuteOnBus<T>(string actionName, Func<T> operation)
+    {
+        EnsureNativeDynamixelPrerequisites();
+        EnsureInitialized(actionName);
+        EnsureMaps();
+        lock (_busIoGate)
+        {
+            return operation();
+        }
     }
 
     static void AutoConfigureLinuxBusMapping()
