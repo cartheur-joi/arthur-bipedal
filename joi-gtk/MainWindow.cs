@@ -34,6 +34,7 @@ public sealed class MainWindow : Window
         typeof(string));
     readonly Dictionary<string, EventBox> _motorIndicators = new();
     readonly Frame _monitoringFrame;
+    AnimationTrainingWindow _animationTrainingWindow;
     uint _monitorTimerId;
     string _lastOverloadFingerprint = string.Empty;
     bool _flashPhase;
@@ -60,6 +61,7 @@ public sealed class MainWindow : Window
 
         Box actionRow = new(Orientation.Horizontal, 8);
         actionRow.PackStart(CreateButton("Initialize", (_, _) => RunAction("Initialize", () => _robot.Initialize())), false, false, 0);
+        actionRow.PackStart(CreateButton("Animation Training", (_, _) => OpenAnimationTrainingWindow()), false, false, 0);
         actionRow.PackStart(CreateButton("View Robot Monitor", (_, _) => ShowRobotMonitor()), false, false, 0);
         actionRow.PackStart(CreateButton("Torque ON (Lower)", (_, _) => RunAction("TorqueOnLower", () => _robot.TorqueOnLower())), false, false, 0);
         actionRow.PackStart(CreateButton("Torque OFF (Lower)", (_, _) => RunAction("TorqueOffLower", () => _robot.TorqueOffLower())), false, false, 0);
@@ -287,6 +289,31 @@ public sealed class MainWindow : Window
             _monitoringFrame.ShowAll();
 
         RunMonitoringSnapshot("ViewRobotMonitor", true);
+    }
+
+    void OpenAnimationTrainingWindow()
+    {
+        try
+        {
+            if (_animationTrainingWindow == null || !_animationTrainingWindow.Visible)
+            {
+                _animationTrainingWindow = new AnimationTrainingWindow(_robot)
+                {
+                    TransientFor = this
+                };
+                _animationTrainingWindow.ShowAll();
+                return;
+            }
+
+            _animationTrainingWindow.Present();
+        }
+        catch (Exception ex)
+        {
+            _statusLabel.Text = "AnimationTraining: FAIL";
+            string line = $"{DateTime.Now:HH:mm:ss} [AnimationTraining] ERROR: {ex.Message}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
+        }
     }
 
     Frame BuildMonitoringPanel()

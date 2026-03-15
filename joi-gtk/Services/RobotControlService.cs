@@ -76,6 +76,50 @@ public sealed class RobotControlService
         return "Lower pose: " + string.Join(", ", snapshot.Select(kv => $"{kv.Key}={kv.Value}"));
     }
 
+    public Dictionary<string, int> ReadPositions(string[] motors)
+    {
+        EnsureNativeDynamixelPrerequisites();
+        EnsureInitialized("ReadPositions");
+        EnsureMaps();
+        if (motors == null || motors.Length == 0)
+            throw new InvalidOperationException("ReadPositions requires one or more motors.");
+
+        return _motorControl.GetPresentPositions(motors);
+    }
+
+    public void SetTorqueOff(string[] motors)
+    {
+        EnsureNativeDynamixelPrerequisites();
+        EnsureInitialized("SetTorqueOff");
+        EnsureMaps();
+        if (motors == null || motors.Length == 0)
+            throw new InvalidOperationException("SetTorqueOff requires one or more motors.");
+
+        _motorControl.SetTorqueOff(motors);
+    }
+
+    public void SetTorqueOn(string[] motors)
+    {
+        EnsureNativeDynamixelPrerequisites();
+        EnsureInitialized("SetTorqueOn");
+        EnsureMaps();
+        if (motors == null || motors.Length == 0)
+            throw new InvalidOperationException("SetTorqueOn requires one or more motors.");
+
+        _motorControl.SetTorqueOn(motors);
+    }
+
+    public void MoveToPositions(Dictionary<string, int> targets, int durationMilliseconds = 700, int interpolationSteps = 6)
+    {
+        EnsureNativeDynamixelPrerequisites();
+        EnsureInitialized("MoveToPositions");
+        EnsureMaps();
+        if (targets == null || targets.Count == 0)
+            throw new InvalidOperationException("MoveToPositions requires one or more target motors.");
+
+        _motorControl.MoveMotorSequenceSmooth(targets, durationMilliseconds, interpolationSteps);
+    }
+
     public string ExecuteWalkCycleSupervised(int cycles, int stepDurationMs, int interpolationSteps, int timeoutMs, bool requireSupportFootContact)
     {
         EnsureNativeDynamixelPrerequisites();
