@@ -19,4 +19,4 @@ Arthur-Bipedal
     1602: Doing singular limbic tests as a way to get started. Maybe the USB camera next.
     1621: Examining camera and not getting anywhere. Might need to address later.
     1640: Did safety checks and range diagnostics where the habit is return to original position.
-    
+    1653: Probed the Arduino for the MPU6050. Only one I think.
