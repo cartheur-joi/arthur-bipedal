@@ -16,4 +16,5 @@ Arthur-Bipedal
     1308: First pass at an implementation of the robot monitoring feature.
     1458: Sorting ttyUSB so that some intelligence on port probing is clear. Might be helpful for other issues.
     1505: Connectivity and reporting stable.
+    1602: Doing singular limbic tests as a way to get started. Maybe the USB camera next.
     
