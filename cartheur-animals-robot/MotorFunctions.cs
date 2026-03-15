@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 
@@ -22,8 +23,8 @@ namespace Cartheur.Animals.Robot
         public static bool BaudRateSet { get; set; }
         public static bool ActivePortSet = false;
         public static bool DynamixelMotorsInitialized = false;
-        public const string DeviceUpper = "COM4";
-        public const string DeviceLower = "COM5";
+        public static string DeviceUpper => ResolveDeviceName(true);
+        public static string DeviceLower => ResolveDeviceName(false);
         // Return the methods from the PortHandler.
         public static int PortNumberUpper { get; set; }
         public static int PortNumberLower { get; set; }
@@ -79,6 +80,34 @@ namespace Cartheur.Animals.Robot
                 SetActivePorts();
             // Add known basic parameters.
             Pid = new ushort[] { 4, 0, 0 };
+        }
+        private static string ResolveDeviceName(bool upperBus)
+        {
+            var envVarName = upperBus ? "ARTHUR_UPPER_PORT" : "ARTHUR_LOWER_PORT";
+            var envPort = Environment.GetEnvironmentVariable(envVarName);
+            if (!string.IsNullOrWhiteSpace(envPort))
+            {
+                return envPort;
+            }
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return upperBus ? "COM4" : "COM5";
+            }
+
+            var candidates = upperBus
+                ? new[] { "/dev/ttyUSB1", "/dev/ttyACM1", "/dev/ttyUSB0", "/dev/ttyACM0" }
+                : new[] { "/dev/ttyUSB0", "/dev/ttyACM0", "/dev/ttyUSB1", "/dev/ttyACM1" };
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (File.Exists(candidates[i]))
+                {
+                    return candidates[i];
+                }
+            }
+
+            return upperBus ? "/dev/ttyUSB1" : "/dev/ttyUSB0";
         }
         public void SetActivePorts()
         {

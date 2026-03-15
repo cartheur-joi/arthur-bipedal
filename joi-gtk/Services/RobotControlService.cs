@@ -23,6 +23,8 @@ public sealed class RobotControlService
     {
         EnsureNativeDynamixelPrerequisites();
         EnsureMaps();
+        AutoConfigureLinuxBusMapping();
+        _motorControl.SetActivePorts();
         string result = _motorControl.InitializeDynamixelMotors().Trim();
         if (!MotorFunctions.DynamixelMotorsInitialized)
             throw new InvalidOperationException(result);
@@ -183,6 +185,39 @@ public sealed class RobotControlService
     {
         if (Motor.MotorContext == null || Motor.MotorContext.Count == 0)
             MotorFunctions.CollateMotorArray();
+    }
+
+    static void AutoConfigureLinuxBusMapping()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            return;
+
+        string existingUpper = Environment.GetEnvironmentVariable("ARTHUR_UPPER_PORT") ?? string.Empty;
+        string existingLower = Environment.GetEnvironmentVariable("ARTHUR_LOWER_PORT") ?? string.Empty;
+        bool hasUpper = !string.IsNullOrWhiteSpace(existingUpper);
+        bool hasLower = !string.IsNullOrWhiteSpace(existingLower);
+        if (hasUpper && hasLower)
+            return;
+
+        string[] candidates = Directory
+            .GetFiles("/dev", "ttyUSB*")
+            .Concat(Directory.GetFiles("/dev", "ttyACM*"))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+        if (candidates.Length < 2)
+            return;
+
+        if (!hasUpper)
+            Environment.SetEnvironmentVariable("ARTHUR_UPPER_PORT", candidates[0]);
+
+        if (!hasLower)
+        {
+            string lowerCandidate = candidates[1];
+            string upperAssigned = Environment.GetEnvironmentVariable("ARTHUR_UPPER_PORT") ?? string.Empty;
+            if (string.Equals(lowerCandidate, upperAssigned, StringComparison.Ordinal) && candidates.Length > 2)
+                lowerCandidate = candidates[2];
+            Environment.SetEnvironmentVariable("ARTHUR_LOWER_PORT", lowerCandidate);
+        }
     }
 
     void EnsureInitialized(string actionName)
