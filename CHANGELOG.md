@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased] - 2026-03-14
 
+### Added (Safety)
+- Added a centralized motor `SafetyGate` in `joi-gtk/Services/RobotControlService.cs` for motion commands:
+  - Runs motor-state checks before and after motion execution.
+  - Validates communication status, overload status, and torque-on state.
+  - Applies fail-safe torque-off when a safety violation is detected during a protected motion action.
+- Added `SafetyOverloadThreshold` configuration property on `RobotControlService` (default: `MotorFunctions.PresentLoadAlarm`).
+
+### Changed (Motion Guarding)
+- `MoveToPositions(...)` now executes through the new motion safety gate.
+- `ExecuteWalkCycleSupervised(...)` now executes through the new motion safety gate over lower-body motor scope.
+
+### Added (Operator Safety UX)
+- Main monitor now reacts to `SafetyGate` trips with:
+  - a red alert banner showing the safety-trip detail,
+  - audible alarm signaling,
+  - `Acknowledge Alert` action to clear the visual alert state.
+
+### Added (Per-Motor Threshold Policy)
+- Added motor-specific overload threshold policy loading in `RobotControlService`.
+- Added `joi-gtk/config/motor-overload-thresholds.json` with standing-focused defaults for ankles, knees, and hips.
+- Monitoring and SafetyGate overload checks now resolve threshold by motor first, then fall back to the global/default threshold.
+
 ### Changed (Integration)
 - Updated solution/project wiring to reference `cartheur-animals-robot` instead of the removed `dynamixel` project:
   - `Cartheur.Animation.Joi.sln` now points to `cartheur-animals-robot/Cartheur.Animals.Robot.csproj`.

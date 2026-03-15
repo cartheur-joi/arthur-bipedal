@@ -3,8 +3,10 @@ using joi_gtk.Services;
 using Cartheur.Animals.Robot;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -26,6 +28,8 @@ public sealed class MainWindow : Window
     readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true, WrapMode = WrapMode.WordChar };
     readonly Entry _overloadThresholdEntry = new() { Text = "900", WidthChars = 6 };
     readonly Label _monitorSummaryLabel = new("Monitoring stopped");
+    readonly EventBox _safetyAlertBox = new();
+    readonly Label _safetyAlertLabel = new("Safety normal");
     readonly ListStore _monitorStore = new(
         typeof(string),
         typeof(string),
@@ -41,14 +45,19 @@ public sealed class MainWindow : Window
     string _lastOverloadFingerprint = string.Empty;
     bool _flashPhase;
     bool _monitorPollInProgress;
+    bool _safetyAlertActive;
+    DateTime _lastSafetyAlarmUtc = DateTime.MinValue;
+    bool _safetyToneInFlight;
 
     public MainWindow() : base("Arthur Bipedal - Linux Control Panel (GTK#)")
     {
         SetDefaultSize(1200, 700);
         BorderWidth = 12;
+        _robot.SafetyGateTripped += OnSafetyGateTripped;
         DeleteEvent += (_, _) =>
         {
             StopMonitoring();
+            _robot.SafetyGateTripped -= OnSafetyGateTripped;
             Application.Quit();
         };
 
@@ -353,12 +362,17 @@ public sealed class MainWindow : Window
         Box container = new(Orientation.Vertical, 8);
         container.BorderWidth = 8;
 
+        InitializeSafetyAlertBox();
+        _safetyAlertBox.Hide();
+        container.PackStart(_safetyAlertBox, false, false, 0);
+
         Box controls = new(Orientation.Horizontal, 8);
         controls.PackStart(new Label("Overload threshold") { Xalign = 0 }, false, false, 0);
         controls.PackStart(_overloadThresholdEntry, false, false, 0);
         controls.PackStart(CreateButton("Refresh Snapshot", (_, _) => RunMonitoringSnapshot("ManualRefresh", false)), false, false, 0);
         controls.PackStart(CreateButton("Start Monitoring", (_, _) => StartMonitoring()), false, false, 0);
         controls.PackStart(CreateButton("Stop Monitoring", (_, _) => StopMonitoring()), false, false, 0);
+        controls.PackStart(CreateButton("Acknowledge Alert", (_, _) => AcknowledgeSafetyAlert()), false, false, 0);
         controls.PackStart(_monitorSummaryLabel, false, false, 12);
         container.PackStart(controls, false, false, 0);
 
@@ -620,5 +634,124 @@ public sealed class MainWindow : Window
     {
         foreach (EventBox indicator in _motorIndicators.Values)
             SetIndicatorColor(indicator, IndicatorState.Normal);
+    }
+
+    void InitializeSafetyAlertBox()
+    {
+        _safetyAlertLabel.Xalign = 0;
+        _safetyAlertLabel.UseMarkup = true;
+        _safetyAlertLabel.Markup = "<b>Safety normal</b>";
+        _safetyAlertBox.BorderWidth = 6;
+        _safetyAlertBox.Add(_safetyAlertLabel);
+        _safetyAlertBox.OverrideBackgroundColor(StateFlags.Normal, new Gdk.RGBA
+        {
+            Red = 0.75,
+            Green = 0.12,
+            Blue = 0.12,
+            Alpha = 1.0
+        });
+    }
+
+    void OnSafetyGateTripped(SafetyGateTrip trip)
+    {
+        Application.Invoke(delegate
+        {
+            string scopeText = trip.Scope.Count == 0 ? "all" : string.Join(",", trip.Scope);
+            string line = $"[SafetyGate] TRIPPED action={trip.ActionName} phase={trip.Phase} scope={scopeText} {trip.Detail}";
+            ApplySafetyAlert(line);
+            RunMonitoringSnapshot("SafetyGateTrip", false);
+        });
+    }
+
+    void ApplySafetyAlert(string message)
+    {
+        if (!_monitoringFrame.Visible)
+            _monitoringFrame.ShowAll();
+
+        _safetyAlertActive = true;
+        _statusLabel.Text = "SAFETY: TRIPPED";
+        _monitorSummaryLabel.Text = "Safety trip active";
+        _safetyAlertLabel.Markup = $"<b>{GLib.Markup.EscapeText(message)}</b>";
+        _safetyAlertBox.ShowAll();
+        AppendLog(message);
+        WriteConsoleEntry(message);
+        BeepSafetyAlarm();
+    }
+
+    void AcknowledgeSafetyAlert()
+    {
+        if (!_safetyAlertActive)
+            return;
+
+        _safetyAlertActive = false;
+        _safetyAlertBox.Hide();
+        _safetyAlertLabel.Markup = "<b>Safety normal</b>";
+        _monitorSummaryLabel.Text = "Alert acknowledged";
+        AppendLog("[SafetyGate] Alert acknowledged.");
+    }
+
+    void BeepSafetyAlarm()
+    {
+        DateTime now = DateTime.UtcNow;
+        if ((now - _lastSafetyAlarmUtc).TotalMilliseconds < 900)
+            return;
+
+        _lastSafetyAlarmUtc = now;
+        try
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                Console.Beep(1240, 180);
+                Console.Beep(880, 220);
+            }
+            else
+            {
+                PlayLinuxTwoToneAlarm();
+            }
+        }
+        catch
+        {
+            try { Gdk.Display.Default?.Beep(); } catch { }
+        }
+    }
+
+    void PlayLinuxTwoToneAlarm()
+    {
+        if (_safetyToneInFlight)
+            return;
+
+        _safetyToneInFlight = true;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                PlayTone(1240, 0.18);
+                System.Threading.Thread.Sleep(100);
+                PlayTone(880, 0.22);
+            }
+            catch
+            {
+                try { Gdk.Display.Default?.Beep(); } catch { }
+            }
+            finally
+            {
+                _safetyToneInFlight = false;
+            }
+        });
+    }
+
+    static void PlayTone(int frequency, double durationSeconds)
+    {
+        using Process process = new();
+        process.StartInfo = new ProcessStartInfo
+        {
+            FileName = "ffplay",
+            Arguments = $"-v error -nodisp -autoexit -f lavfi \"sine=frequency={frequency}:duration={durationSeconds:0.00}\"",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        if (!process.Start())
+            throw new InvalidOperationException("ffplay failed to start.");
+        process.WaitForExit(1200);
     }
 }

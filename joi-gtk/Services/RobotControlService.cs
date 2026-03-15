@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace joi_gtk.Services;
 
@@ -13,12 +14,16 @@ public sealed class RobotControlService
     readonly WalkController _walkController;
     readonly object _initializeGate = new();
     readonly object _busIoGate = new();
+    readonly Dictionary<string, int> _motorOverloadThresholds = new(StringComparer.Ordinal);
+    int _safetyOverloadThreshold = MotorFunctions.PresentLoadAlarm;
     bool _initialized;
+    public event Action<SafetyGateTrip> SafetyGateTripped;
 
     public RobotControlService()
     {
         _motorControl = new MotorFunctions();
         _walkController = new WalkController(_motorControl);
+        LoadMotorOverloadThresholdPolicy();
     }
 
     public string Initialize()
@@ -50,6 +55,16 @@ public sealed class RobotControlService
     }
 
     public bool IsInitialized => _initialized;
+    public int SafetyOverloadThreshold
+    {
+        get => _safetyOverloadThreshold;
+        set
+        {
+            if (value <= 0)
+                throw new ArgumentOutOfRangeException(nameof(value), "Safety overload threshold must be > 0.");
+            _safetyOverloadThreshold = value;
+        }
+    }
 
     public string TorqueOnLower()
     {
@@ -123,7 +138,7 @@ public sealed class RobotControlService
 
     public void MoveToPositions(Dictionary<string, int> targets, int durationMilliseconds = 700, int interpolationSteps = 6)
     {
-        ExecuteOnBus("MoveToPositions", () =>
+        ExecuteMotionWithSafety("MoveToPositions", targets?.Keys, () =>
         {
             if (targets == null || targets.Count == 0)
                 throw new InvalidOperationException("MoveToPositions requires one or more target motors.");
@@ -135,7 +150,8 @@ public sealed class RobotControlService
 
     public string ExecuteWalkCycleSupervised(int cycles, int stepDurationMs, int interpolationSteps, int timeoutMs, bool requireSupportFootContact)
     {
-        return ExecuteOnBus("ExecuteSupervisedWalk", () =>
+        IEnumerable<string> lowerBodyMotors = Limbic.LeftLeg.Concat(Limbic.RightLeg);
+        return ExecuteMotionWithSafety("ExecuteSupervisedWalk", lowerBodyMotors, () =>
         {
             VerifyLowerBus("ExecuteSupervisedWalk");
             _walkController.RequireSupportFootContact = requireSupportFootContact;
@@ -172,7 +188,8 @@ public sealed class RobotControlService
                     int txRxResult = Dynamixel.getLastTxRxResult(port, MotorFunctions.ProtocolVersion);
                     byte packetError = Dynamixel.getLastRxPacketError(port, MotorFunctions.ProtocolVersion);
                     bool communicationOk = txRxResult == MotorFunctions.ComSuccess && packetError == 0;
-                    bool overload = communicationOk && torqueOn && normalizedLoad >= overloadThreshold;
+                    int effectiveThreshold = ResolveOverloadThreshold(motorName, overloadThreshold);
+                    bool overload = communicationOk && torqueOn && normalizedLoad >= effectiveThreshold;
 
                     snapshot.Add(new MotorMonitorReading(
                         motorName,
@@ -227,6 +244,68 @@ public sealed class RobotControlService
         return $"{txRxText}; {packetErrorText}";
     }
 
+    int ResolveOverloadThreshold(string motorName, int fallbackThreshold)
+    {
+        if (_motorOverloadThresholds.TryGetValue(motorName, out int threshold) && threshold > 0)
+            return threshold;
+        return fallbackThreshold;
+    }
+
+    void LoadMotorOverloadThresholdPolicy()
+    {
+        EnsureMaps();
+        _motorOverloadThresholds.Clear();
+
+        string policyPath = ResolveThresholdPolicyPath();
+        if (string.IsNullOrWhiteSpace(policyPath) || !File.Exists(policyPath))
+            return;
+
+        try
+        {
+            string json = File.ReadAllText(policyPath);
+            MotorOverloadThresholdPolicy policy = JsonSerializer.Deserialize<MotorOverloadThresholdPolicy>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (policy == null)
+                return;
+
+            if (policy.DefaultThreshold > 0)
+                _safetyOverloadThreshold = policy.DefaultThreshold;
+
+            if (policy.Motors == null || policy.Motors.Count == 0)
+                return;
+
+            foreach ((string motorName, int threshold) in policy.Motors)
+            {
+                if (threshold <= 0)
+                    continue;
+                if (Motor.MotorContext == null || !Motor.MotorContext.ContainsKey(motorName))
+                    continue;
+                _motorOverloadThresholds[motorName] = threshold;
+            }
+        }
+        catch
+        {
+            // Keep defaults if the policy file is missing/invalid.
+        }
+    }
+
+    static string ResolveThresholdPolicyPath()
+    {
+        string runtimeCopy = Path.Combine(AppContext.BaseDirectory, "config", "motor-overload-thresholds.json");
+        if (File.Exists(runtimeCopy))
+            return runtimeCopy;
+
+        string workspacePath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..",
+            "joi-gtk", "config", "motor-overload-thresholds.json"));
+        if (File.Exists(workspacePath))
+            return workspacePath;
+
+        return string.Empty;
+    }
+
     static void EnsureNativeDynamixelPrerequisites()
     {
         string nativeFile = RuntimeInformation.ProcessArchitecture switch
@@ -258,6 +337,102 @@ public sealed class RobotControlService
         lock (_busIoGate)
         {
             return operation();
+        }
+    }
+
+    T ExecuteMotionWithSafety<T>(string actionName, IEnumerable<string> involvedMotors, Func<T> operation)
+    {
+        return ExecuteOnBus(actionName, () =>
+        {
+            string[] scopedMotors = NormalizeMotorList(involvedMotors);
+            ValidateSafetyState(actionName, scopedMotors, "pre-check");
+            try
+            {
+                T result = operation();
+                ValidateSafetyState(actionName, scopedMotors, "post-check");
+                return result;
+            }
+            catch (Exception ex) when (!IsSafetyGateError(ex))
+            {
+                ApplyFailSafeTorqueOff(scopedMotors);
+                throw;
+            }
+        });
+    }
+
+    static bool IsSafetyGateError(Exception ex)
+    {
+        return ex is InvalidOperationException &&
+               ex.Message.StartsWith("SafetyGate", StringComparison.Ordinal);
+    }
+
+    static string[] NormalizeMotorList(IEnumerable<string> involvedMotors)
+    {
+        if (involvedMotors == null)
+            return Array.Empty<string>();
+
+        return involvedMotors
+            .Where(motor => !string.IsNullOrWhiteSpace(motor))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    void ValidateSafetyState(string actionName, string[] scopedMotors, string phase)
+    {
+        IReadOnlyList<MotorMonitorReading> snapshot = ReadMotorMonitoringSnapshot(_safetyOverloadThreshold);
+        bool filterByScope = scopedMotors.Length > 0;
+        HashSet<string> scope = filterByScope
+            ? new HashSet<string>(scopedMotors, StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+
+        MotorMonitorReading[] scopedSnapshot = filterByScope
+            ? snapshot.Where(reading => scope.Contains(reading.MotorName)).ToArray()
+            : snapshot.ToArray();
+
+        MotorMonitorReading[] communicationErrors = scopedSnapshot
+            .Where(reading => !reading.CommunicationOk)
+            .ToArray();
+        MotorMonitorReading[] overloads = scopedSnapshot
+            .Where(reading => reading.Overload)
+            .ToArray();
+        MotorMonitorReading[] torqueOff = scopedSnapshot
+            .Where(reading => !reading.TorqueOn)
+            .ToArray();
+
+        if (communicationErrors.Length == 0 && overloads.Length == 0 && torqueOff.Length == 0)
+            return;
+
+        string detail =
+            $"Comm={FormatSafetyRows(communicationErrors, row => $"{row.MotorName}:{row.Error}")}; " +
+            $"Overload={FormatSafetyRows(overloads, row => $"{row.MotorName}:{row.Load}")}; " +
+            $"TorqueOff={FormatSafetyRows(torqueOff, row => row.MotorName)}.";
+
+        SafetyGateTripped?.Invoke(new SafetyGateTrip(actionName, phase, scopedMotors, detail));
+        ApplyFailSafeTorqueOff(scopedMotors);
+        throw new InvalidOperationException(
+            $"SafetyGate blocked {actionName} ({phase}). {detail}");
+    }
+
+    static string FormatSafetyRows(IReadOnlyList<MotorMonitorReading> rows, Func<MotorMonitorReading, string> formatter)
+    {
+        if (rows.Count == 0)
+            return "none";
+
+        return string.Join(", ", rows.Select(formatter));
+    }
+
+    void ApplyFailSafeTorqueOff(string[] scopedMotors)
+    {
+        try
+        {
+            if (scopedMotors.Length > 0)
+                _motorControl.SetTorqueOff(scopedMotors);
+            else
+                _motorControl.SetTorqueOff("lower");
+        }
+        catch
+        {
+            // Suppress here to preserve the triggering safety exception context.
         }
     }
 
@@ -336,6 +511,28 @@ public sealed class RobotControlService
         string detail = Marshal.PtrToStringAnsi(Dynamixel.getTxRxResult(MotorFunctions.ProtocolVersion, result)) ?? $"code {result}";
         throw new InvalidOperationException($"{actionName} failed: lower bus communication error ({detail}).");
     }
+}
+
+sealed class MotorOverloadThresholdPolicy
+{
+    public int DefaultThreshold { get; set; }
+    public Dictionary<string, int> Motors { get; set; } = new(StringComparer.Ordinal);
+}
+
+public sealed class SafetyGateTrip
+{
+    public SafetyGateTrip(string actionName, string phase, IReadOnlyList<string> scope, string detail)
+    {
+        ActionName = actionName;
+        Phase = phase;
+        Scope = scope;
+        Detail = detail;
+    }
+
+    public string ActionName { get; }
+    public string Phase { get; }
+    public IReadOnlyList<string> Scope { get; }
+    public string Detail { get; }
 }
 
 public sealed class MotorMonitorReading

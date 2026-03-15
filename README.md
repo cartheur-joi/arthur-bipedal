@@ -16,6 +16,38 @@ control library for a 25-DOF bipedal robot. The current codebase supports:
 The codebase does **not** yet implement a complete autonomous walking gait routine.
 The "walk three steps" UI handlers are currently empty stubs.
 
+## Motor Safety Threshold Policy (JSON)
+
+`joi-gtk` now supports per-motor overload thresholds from a JSON policy file:
+
+- Source file: `joi-gtk/config/motor-overload-thresholds.json`
+- Runtime copy: `joi-gtk/bin/Debug/net9.0/config/motor-overload-thresholds.json`
+- Applied by: `joi-gtk/Services/RobotControlService.cs`
+
+Policy format:
+
+```json
+{
+  "defaultThreshold": 900,
+  "motors": {
+    "l_ankle_y": 680,
+    "r_ankle_y": 680
+  }
+}
+```
+
+How it works:
+
+- Safety checks and monitor overload detection resolve threshold per motor first.
+- If a motor is not listed, `defaultThreshold` is used.
+- If the JSON is missing/invalid, code falls back to built-in defaults.
+
+Tuning guidance for standing development:
+
+- Start stricter on ankle and knee motors, then raise gradually as needed.
+- Keep left/right thresholds symmetric unless hardware asymmetry is confirmed.
+- Change only one joint group at a time and retest monitor alerts after each change.
+
 ## Solution Structure
 
 - `joi-animations/`: WinForms UI application (`Cartheur.Animation.Joi`)

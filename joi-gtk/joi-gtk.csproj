@@ -24,6 +24,9 @@
     <None Include="..\cartheur-animals-robot\lib\libdxl_arm64_c.so" Link="lib\libdxl_arm64_c.so">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="config\motor-overload-thresholds.json" Link="config\motor-overload-thresholds.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>
