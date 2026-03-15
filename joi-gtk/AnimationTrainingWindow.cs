@@ -4,11 +4,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace joi_gtk;
 
 public sealed class AnimationTrainingWindow : Window
 {
+    readonly RobotControlService _robot;
     readonly AnimationTrainingService _training;
     readonly PocketSphinxVoiceCommandSource _voice = new();
     readonly StringBuilder _log = new();
@@ -23,6 +25,7 @@ public sealed class AnimationTrainingWindow : Window
 
     public AnimationTrainingWindow(RobotControlService robot) : base("Animation Training")
     {
+        _robot = robot;
         _training = new AnimationTrainingService(robot);
         SetDefaultSize(900, 560);
         BorderWidth = 10;
@@ -34,6 +37,7 @@ public sealed class AnimationTrainingWindow : Window
         };
 
         _voice.PhraseDetected += OnPhraseDetected;
+        Shown += (_, _) => EnsureInitializedInBackground();
 
         Box root = new(Orientation.Vertical, 8);
         Add(root);
@@ -134,6 +138,36 @@ public sealed class AnimationTrainingWindow : Window
             _statusLabel.Text = "Training: failed";
             AppendLog($"Start ERROR: {ex.Message}");
         }
+    }
+
+    void EnsureInitializedInBackground()
+    {
+        if (_robot.IsInitialized)
+            return;
+
+        _statusLabel.Text = "Initializing robot...";
+        AppendLog("Initialization started in background for Animation Training.");
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                string result = _robot.Initialize();
+                Application.Invoke(delegate
+                {
+                    _statusLabel.Text = "Idle";
+                    AppendLog(result);
+                });
+            }
+            catch (Exception ex)
+            {
+                Application.Invoke(delegate
+                {
+                    _statusLabel.Text = "Initialize: failed";
+                    AppendLog($"Initialize ERROR: {ex.Message}");
+                });
+            }
+        });
     }
 
     void StopAndSave()

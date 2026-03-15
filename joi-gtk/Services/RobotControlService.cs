@@ -11,6 +11,7 @@ public sealed class RobotControlService
 {
     readonly MotorFunctions _motorControl;
     readonly WalkController _walkController;
+    readonly object _initializeGate = new();
     bool _initialized;
 
     public RobotControlService()
@@ -21,25 +22,33 @@ public sealed class RobotControlService
 
     public string Initialize()
     {
-        EnsureNativeDynamixelPrerequisites();
-        EnsureMaps();
-        AutoConfigureLinuxBusMapping();
-        _motorControl.SetActivePorts();
-        string result = _motorControl.InitializeDynamixelMotors().Trim();
-        if (!MotorFunctions.DynamixelMotorsInitialized)
-            throw new InvalidOperationException(result);
+        lock (_initializeGate)
+        {
+            if (_initialized)
+                return "Robot already initialized.";
 
-        int respondingLowerMotors = ScanLowerMotors();
-        _initialized = true;
-        IReadOnlyList<MotorMonitorReading> snapshot = ReadMotorMonitoringSnapshot(MotorFunctions.PresentLoadAlarm);
-        int respondingUpperMotors = snapshot.Count(r => r.Location == "upper" && r.CommunicationOk);
-        int communicationErrors = snapshot.Count(r => !r.CommunicationOk);
-        int overloads = snapshot.Count(r => r.Overload);
-        return
-            $"{result} Lower motor scan OK ({respondingLowerMotors} responding). " +
-            $"Upper motor scan OK ({respondingUpperMotors} responding). " +
-            $"Errors={communicationErrors}, Overloads={overloads}.";
+            EnsureNativeDynamixelPrerequisites();
+            EnsureMaps();
+            AutoConfigureLinuxBusMapping();
+            _motorControl.SetActivePorts();
+            string result = _motorControl.InitializeDynamixelMotors().Trim();
+            if (!MotorFunctions.DynamixelMotorsInitialized)
+                throw new InvalidOperationException(result);
+
+            int respondingLowerMotors = ScanLowerMotors();
+            _initialized = true;
+            IReadOnlyList<MotorMonitorReading> snapshot = ReadMotorMonitoringSnapshot(MotorFunctions.PresentLoadAlarm);
+            int respondingUpperMotors = snapshot.Count(r => r.Location == "upper" && r.CommunicationOk);
+            int communicationErrors = snapshot.Count(r => !r.CommunicationOk);
+            int overloads = snapshot.Count(r => r.Overload);
+            return
+                $"{result} Lower motor scan OK ({respondingLowerMotors} responding). " +
+                $"Upper motor scan OK ({respondingUpperMotors} responding). " +
+                $"Errors={communicationErrors}, Overloads={overloads}.";
+        }
     }
+
+    public bool IsInitialized => _initialized;
 
     public string TorqueOnLower()
     {
