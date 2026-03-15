@@ -26,6 +26,18 @@ All notable changes to this project are documented in this file.
 - Added `joi-gtk/config/motor-overload-thresholds.json` with standing-focused defaults for ankles, knees, and hips.
 - Monitoring and SafetyGate overload checks now resolve threshold by motor first, then fall back to the global/default threshold.
 
+### Added (Persistent Safety Events)
+- Added durable safety event logging to `logs/safety-events.log` from `RobotControlService`.
+- Logged entries now include timestamp, event type, action, phase, motor scope, fail-safe action, and detail payload.
+
+### Added (Safe Sweep Tool)
+- Added GTK "Safe Sweep" panel in robot monitoring view:
+  - motor picker,
+  - low/high target fields,
+  - step duration field,
+  - start/stop sweep controls.
+- Safe Sweep requires active monitoring and automatically returns the joint to the original position when stopping or on failure.
+
 ### Changed (Integration)
 - Updated solution/project wiring to reference `cartheur-animals-robot` instead of the removed `dynamixel` project:
   - `Cartheur.Animation.Joi.sln` now points to `cartheur-animals-robot/Cartheur.Animals.Robot.csproj`.

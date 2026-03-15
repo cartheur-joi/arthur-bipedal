@@ -15,6 +15,7 @@ public sealed class RobotControlService
     readonly object _initializeGate = new();
     readonly object _busIoGate = new();
     readonly Dictionary<string, int> _motorOverloadThresholds = new(StringComparer.Ordinal);
+    readonly string _safetyEventLogPath;
     int _safetyOverloadThreshold = MotorFunctions.PresentLoadAlarm;
     bool _initialized;
     public event Action<SafetyGateTrip> SafetyGateTripped;
@@ -24,6 +25,7 @@ public sealed class RobotControlService
         _motorControl = new MotorFunctions();
         _walkController = new WalkController(_motorControl);
         LoadMotorOverloadThresholdPolicy();
+        _safetyEventLogPath = ResolveSafetyEventLogPath();
     }
 
     public string Initialize()
@@ -354,7 +356,14 @@ public sealed class RobotControlService
             }
             catch (Exception ex) when (!IsSafetyGateError(ex))
             {
-                ApplyFailSafeTorqueOff(scopedMotors);
+                string failSafeResult = ApplyFailSafeTorqueOff(scopedMotors);
+                AppendSafetyEvent(
+                    eventType: "MOTION_EXCEPTION",
+                    actionName: actionName,
+                    phase: "runtime",
+                    scopedMotors: scopedMotors,
+                    detail: ex.Message,
+                    failSafeAction: failSafeResult);
                 throw;
             }
         });
@@ -407,8 +416,15 @@ public sealed class RobotControlService
             $"Overload={FormatSafetyRows(overloads, row => $"{row.MotorName}:{row.Load}")}; " +
             $"TorqueOff={FormatSafetyRows(torqueOff, row => row.MotorName)}.";
 
+        string failSafeResult = ApplyFailSafeTorqueOff(scopedMotors);
         SafetyGateTripped?.Invoke(new SafetyGateTrip(actionName, phase, scopedMotors, detail));
-        ApplyFailSafeTorqueOff(scopedMotors);
+        AppendSafetyEvent(
+            eventType: "SAFETY_GATE_TRIP",
+            actionName: actionName,
+            phase: phase,
+            scopedMotors: scopedMotors,
+            detail: detail,
+            failSafeAction: failSafeResult);
         throw new InvalidOperationException(
             $"SafetyGate blocked {actionName} ({phase}). {detail}");
     }
@@ -421,18 +437,68 @@ public sealed class RobotControlService
         return string.Join(", ", rows.Select(formatter));
     }
 
-    void ApplyFailSafeTorqueOff(string[] scopedMotors)
+    string ApplyFailSafeTorqueOff(string[] scopedMotors)
     {
         try
         {
             if (scopedMotors.Length > 0)
+            {
                 _motorControl.SetTorqueOff(scopedMotors);
+                return $"torque_off[{string.Join(",", scopedMotors)}]";
+            }
             else
+            {
                 _motorControl.SetTorqueOff("lower");
+                return "torque_off[lower]";
+            }
         }
         catch
         {
-            // Suppress here to preserve the triggering safety exception context.
+            return "torque_off_failed";
+        }
+    }
+
+    void AppendSafetyEvent(
+        string eventType,
+        string actionName,
+        string phase,
+        IReadOnlyList<string> scopedMotors,
+        string detail,
+        string failSafeAction)
+    {
+        try
+        {
+            string scope = scopedMotors == null || scopedMotors.Count == 0
+                ? "all"
+                : string.Join(",", scopedMotors);
+            string line =
+                $"{DateTimeOffset.UtcNow:O}\tevent={eventType}\taction={actionName}\tphase={phase}\tscope={scope}\tfailsafe={failSafeAction}\tdetail={detail}";
+            string directory = Path.GetDirectoryName(_safetyEventLogPath) ?? string.Empty;
+            if (directory.Length > 0)
+                Directory.CreateDirectory(directory);
+            File.AppendAllText(_safetyEventLogPath, line + Environment.NewLine);
+        }
+        catch
+        {
+            // Logging must never block robot safety flow.
+        }
+    }
+
+    static string ResolveSafetyEventLogPath()
+    {
+        string runtimePath = Path.Combine(AppContext.BaseDirectory, "logs", "safety-events.log");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(runtimePath) ?? "logs");
+            return runtimePath;
+        }
+        catch
+        {
+            string workspacePath = Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..",
+                "logs", "safety-events.log"));
+            return workspacePath;
         }
     }
 

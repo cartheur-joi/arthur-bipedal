@@ -48,6 +48,31 @@ Tuning guidance for standing development:
 - Keep left/right thresholds symmetric unless hardware asymmetry is confirmed.
 - Change only one joint group at a time and retest monitor alerts after each change.
 
+## Safety Event Log
+
+`joi-gtk` now writes persistent safety events to:
+
+- `logs/safety-events.log`
+
+Each line records:
+
+- UTC timestamp (`ISO-8601`)
+- event type (`SAFETY_GATE_TRIP`, `MOTION_EXCEPTION`)
+- action and phase
+- motor scope
+- fail-safe action result
+- safety detail payload
+
+## Safe Sweep (GTK)
+
+In `Robot Monitoring`, the **Safe Sweep** panel allows controlled back-and-forth joint tests.
+
+Rules:
+
+- Monitoring must be active before starting a sweep.
+- Sweep uses motion safety checks (SafetyGate).
+- Stop or failure returns the motor to its original position.
+
 ## Solution Structure
 
 - `joi-animations/`: WinForms UI application (`Cartheur.Animation.Joi`)

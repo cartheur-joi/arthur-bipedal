@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace joi_gtk;
@@ -30,6 +31,11 @@ public sealed class MainWindow : Window
     readonly Label _monitorSummaryLabel = new("Monitoring stopped");
     readonly EventBox _safetyAlertBox = new();
     readonly Label _safetyAlertLabel = new("Safety normal");
+    readonly ComboBoxText _sweepMotorSelection = new();
+    readonly Entry _sweepLowEntry = new() { Text = "420", WidthChars = 6 };
+    readonly Entry _sweepHighEntry = new() { Text = "620", WidthChars = 6 };
+    readonly Entry _sweepDurationEntry = new() { Text = "1200", WidthChars = 6 };
+    readonly Label _sweepStatusLabel = new("Sweep idle");
     readonly ListStore _monitorStore = new(
         typeof(string),
         typeof(string),
@@ -48,6 +54,8 @@ public sealed class MainWindow : Window
     bool _safetyAlertActive;
     DateTime _lastSafetyAlarmUtc = DateTime.MinValue;
     bool _safetyToneInFlight;
+    CancellationTokenSource _sweepCancellation;
+    bool _sweepInProgress;
 
     public MainWindow() : base("Arthur Bipedal - Linux Control Panel (GTK#)")
     {
@@ -56,6 +64,7 @@ public sealed class MainWindow : Window
         _robot.SafetyGateTripped += OnSafetyGateTripped;
         DeleteEvent += (_, _) =>
         {
+            StopSweep();
             StopMonitoring();
             _robot.SafetyGateTripped -= OnSafetyGateTripped;
             Application.Quit();
@@ -376,6 +385,9 @@ public sealed class MainWindow : Window
         controls.PackStart(_monitorSummaryLabel, false, false, 12);
         container.PackStart(controls, false, false, 0);
 
+        Frame sweepFrame = BuildSafeSweepPanel();
+        container.PackStart(sweepFrame, false, false, 0);
+
         Paned body = new(Orientation.Horizontal);
         body.WideHandle = true;
         body.Position = 520;
@@ -403,6 +415,175 @@ public sealed class MainWindow : Window
 
         frame.Add(container);
         return frame;
+    }
+
+    Frame BuildSafeSweepPanel()
+    {
+        Frame frame = new("Safe Sweep");
+        Box row = new(Orientation.Horizontal, 8);
+        row.BorderWidth = 6;
+
+        PopulateSweepMotorSelection();
+        row.PackStart(new Label("Motor") { Xalign = 0 }, false, false, 0);
+        row.PackStart(_sweepMotorSelection, false, false, 0);
+        row.PackStart(new Label("Low") { Xalign = 0 }, false, false, 0);
+        row.PackStart(_sweepLowEntry, false, false, 0);
+        row.PackStart(new Label("High") { Xalign = 0 }, false, false, 0);
+        row.PackStart(_sweepHighEntry, false, false, 0);
+        row.PackStart(new Label("Step ms") { Xalign = 0 }, false, false, 0);
+        row.PackStart(_sweepDurationEntry, false, false, 0);
+        row.PackStart(CreateButton("Start Sweep", (_, _) => StartSweep()), false, false, 0);
+        row.PackStart(CreateButton("Stop Sweep", (_, _) => StopSweep()), false, false, 0);
+        row.PackStart(_sweepStatusLabel, false, false, 8);
+        frame.Add(row);
+        return frame;
+    }
+
+    void PopulateSweepMotorSelection()
+    {
+        if (_sweepMotorSelection.Model != null)
+            return;
+
+        if (Motor.MotorContext == null || Motor.MotorContext.Count == 0)
+            MotorFunctions.CollateMotorArray();
+
+        foreach (string motor in Motor.MotorContext
+                     .OrderBy(kv => kv.Value)
+                     .Select(kv => kv.Key))
+        {
+            _sweepMotorSelection.AppendText(motor);
+        }
+
+        if (_sweepMotorSelection.Active < 0)
+            _sweepMotorSelection.Active = 0;
+    }
+
+    void StartSweep()
+    {
+        if (_sweepInProgress)
+            return;
+
+        if (_monitorTimerId == 0)
+        {
+            ValidationFail("Start Monitoring before running Safe Sweep.");
+            return;
+        }
+
+        string motor = _sweepMotorSelection.ActiveText ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(motor))
+        {
+            ValidationFail("Select a motor for Safe Sweep.");
+            return;
+        }
+
+        if (!int.TryParse(_sweepLowEntry.Text, out int lowTarget) ||
+            !int.TryParse(_sweepHighEntry.Text, out int highTarget) ||
+            !int.TryParse(_sweepDurationEntry.Text, out int stepMs))
+        {
+            ValidationFail("Invalid Safe Sweep values.");
+            return;
+        }
+        if (lowTarget < 0 || highTarget > 4095 || highTarget <= lowTarget)
+        {
+            ValidationFail("Safe Sweep range must be 0..4095 and low < high.");
+            return;
+        }
+        if (stepMs < 200)
+        {
+            ValidationFail("Safe Sweep step duration must be >= 200 ms.");
+            return;
+        }
+
+        _sweepCancellation = new CancellationTokenSource();
+        _sweepInProgress = true;
+        _sweepStatusLabel.Text = $"Sweeping {motor}";
+        AppendLog($"[Sweep] Started motor={motor} low={lowTarget} high={highTarget} stepMs={stepMs}");
+        _ = Task.Run(() => RunSweepLoop(motor, lowTarget, highTarget, stepMs, _sweepCancellation.Token));
+    }
+
+    void StopSweep()
+    {
+        if (!_sweepInProgress)
+            return;
+
+        _sweepCancellation?.Cancel();
+        _sweepStatusLabel.Text = "Sweep stopping...";
+    }
+
+    void RunSweepLoop(string motor, int lowTarget, int highTarget, int stepMs, CancellationToken token)
+    {
+        int originalPosition = 0;
+        bool hasOriginal = false;
+        Exception failure = null;
+        try
+        {
+            originalPosition = _robot.ReadPositions(new[] { motor })[motor];
+            hasOriginal = true;
+            _robot.SetTorqueOn(new[] { motor });
+
+            int[] targets = { lowTarget, highTarget };
+            int index = 0;
+            while (!token.IsCancellationRequested)
+            {
+                if (_monitorTimerId == 0)
+                    throw new InvalidOperationException("Safe Sweep stopped because monitoring is no longer active.");
+
+                int target = targets[index];
+                _robot.MoveToPositions(new Dictionary<string, int> { [motor] = target }, stepMs, 10);
+                int measured = _robot.ReadPositions(new[] { motor })[motor];
+                Application.Invoke(delegate
+                {
+                    AppendLog($"[Sweep] motor={motor} target={target} measured={measured}");
+                });
+
+                index = (index + 1) % targets.Length;
+                Thread.Sleep(100);
+            }
+        }
+        catch (Exception ex)
+        {
+            failure = ex;
+        }
+        finally
+        {
+            if (hasOriginal)
+            {
+                try
+                {
+                    _robot.MoveToPositions(new Dictionary<string, int> { [motor] = originalPosition }, stepMs, 10);
+                    Application.Invoke(delegate
+                    {
+                        AppendLog($"[Sweep] Returned motor={motor} to origin={originalPosition}");
+                    });
+                }
+                catch (Exception ex)
+                {
+                    if (failure == null)
+                        failure = ex;
+                }
+            }
+
+            Application.Invoke(delegate
+            {
+                _sweepInProgress = false;
+                _sweepCancellation?.Dispose();
+                _sweepCancellation = null;
+
+                if (failure == null || token.IsCancellationRequested)
+                {
+                    _sweepStatusLabel.Text = "Sweep idle";
+                    if (failure == null)
+                        AppendLog($"[Sweep] Stopped motor={motor}");
+                }
+                else
+                {
+                    _sweepStatusLabel.Text = "Sweep failed";
+                    string line = $"[Sweep] ERROR motor={motor}: {failure.Message}";
+                    AppendLog(line);
+                    WriteConsoleEntry(line);
+                }
+            });
+        }
     }
 
     Frame BuildMotorMapPanel()
