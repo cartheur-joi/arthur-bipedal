@@ -22,7 +22,7 @@ public sealed class MainWindow : Window
     readonly Entry _interpolationEntry = new() { Text = "12" };
     readonly Entry _timeoutEntry = new() { Text = "8000" };
     readonly CheckButton _requireFootContact = new("Need foot-contact");
-    readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true };
+    readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true, WrapMode = WrapMode.WordChar };
     readonly Entry _overloadThresholdEntry = new() { Text = "900", WidthChars = 6 };
     readonly Label _monitorSummaryLabel = new("Monitoring stopped");
     readonly ListStore _monitorStore = new(
@@ -225,7 +225,7 @@ public sealed class MainWindow : Window
     void ValidationFail(string message)
     {
         _statusLabel.Text = "Validation: FAIL";
-        string line = $"{DateTime.Now:HH:mm:ss} [Validation] {message}";
+        string line = $"[Validation] {message}";
         AppendLog(line);
         WriteConsoleEntry(line);
     }
@@ -236,14 +236,14 @@ public sealed class MainWindow : Window
         {
             string result = action();
             _statusLabel.Text = $"{actionName}: OK";
-            string line = $"{DateTime.Now:HH:mm:ss} [{actionName}] {result}";
+            string line = $"[{actionName}] {result}";
             AppendLog(line);
             WriteConsoleEntry(line);
         }
         catch (Exception ex)
         {
             _statusLabel.Text = $"{actionName}: FAIL";
-            string line = $"{DateTime.Now:HH:mm:ss} [{actionName}] ERROR: {ex.Message}";
+            string line = $"[{actionName}] ERROR: {ex.Message}";
             AppendLog(line);
             WriteConsoleEntry(line);
         }
@@ -258,6 +258,7 @@ public sealed class MainWindow : Window
         }
 
         _log.AppendLine(line);
+        _log.AppendLine();
         SetLog(_log.ToString());
     }
 
@@ -310,7 +311,7 @@ public sealed class MainWindow : Window
         catch (Exception ex)
         {
             _statusLabel.Text = "AnimationTraining: FAIL";
-            string line = $"{DateTime.Now:HH:mm:ss} [AnimationTraining] ERROR: {ex.Message}";
+            string line = $"[AnimationTraining] ERROR: {ex.Message}";
             AppendLog(line);
             WriteConsoleEntry(line);
         }
@@ -492,7 +493,7 @@ public sealed class MainWindow : Window
                 _monitorSummaryLabel.Text = $"Overload(s): {overloads.Length}";
                 if (_lastOverloadFingerprint != overloadFingerprint)
                 {
-                    string line = $"{DateTime.Now:HH:mm:ss} [{actionName}] OVERLOAD {string.Join(", ", overloads)}";
+                    string line = $"[{actionName}] OVERLOAD {string.Join(", ", overloads)}";
                     AppendLog(line);
                     WriteConsoleEntry(line);
                 }
@@ -503,7 +504,7 @@ public sealed class MainWindow : Window
                 _monitorSummaryLabel.Text = "No overloads";
                 if (logWhenNoAlert)
                 {
-                    string line = $"{DateTime.Now:HH:mm:ss} [{actionName}] Snapshot OK ({snapshot.Count} motors).";
+                    string line = $"[{actionName}] Snapshot OK ({snapshot.Count} motors).";
                     AppendLog(line);
                     WriteConsoleEntry(line);
                 }
@@ -515,7 +516,7 @@ public sealed class MainWindow : Window
         {
             _statusLabel.Text = "Monitoring: FAIL";
             _monitorSummaryLabel.Text = "Monitoring error";
-            string line = $"{DateTime.Now:HH:mm:ss} [{actionName}] ERROR: {ex.Message}";
+            string line = $"[{actionName}] ERROR: {ex.Message}";
             AppendLog(line);
             WriteConsoleEntry(line);
             StopMonitoring();

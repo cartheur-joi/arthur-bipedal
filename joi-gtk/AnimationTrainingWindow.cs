@@ -20,7 +20,7 @@ public sealed class AnimationTrainingWindow : Window
     readonly Entry _stepIntervalEntry = new() { Text = "1000", WidthChars = 7 };
     readonly Label _statusLabel = new("Idle");
     readonly Label _voiceStatusLabel = new("Voice: off");
-    readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true };
+    readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true, WrapMode = WrapMode.WordChar };
     uint _captureTimerId;
 
     public AnimationTrainingWindow(RobotControlService robot) : base("Animation Training")
@@ -288,7 +288,8 @@ public sealed class AnimationTrainingWindow : Window
 
     void AppendLog(string line)
     {
-        _log.AppendLine($"{DateTime.Now:HH:mm:ss} {line}");
+        _log.AppendLine(line);
+        _log.AppendLine();
         if (_logView.Buffer == null)
             _logView.Buffer = new TextBuffer(new TextTagTable());
         _logView.Buffer.Text = _log.ToString();

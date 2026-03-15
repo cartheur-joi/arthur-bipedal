@@ -23,6 +23,8 @@ namespace Cartheur.Animals.Robot
         public static bool BaudRateSet { get; set; }
         public static bool ActivePortSet = false;
         public static bool DynamixelMotorsInitialized = false;
+        static string ActiveDeviceUpper { get; set; } = string.Empty;
+        static string ActiveDeviceLower { get; set; } = string.Empty;
         public static string DeviceUpper => ResolveDeviceName(true);
         public static string DeviceLower => ResolveDeviceName(false);
         // Return the methods from the PortHandler.
@@ -113,10 +115,21 @@ namespace Cartheur.Animals.Robot
         {
             try
             {
-                PortNumberUpper = Dynamixel.portHandler(DeviceUpper);
-                PortNumberLower = Dynamixel.portHandler(DeviceLower);
+                string desiredUpper = DeviceUpper;
+                string desiredLower = DeviceLower;
+                if (ActivePortSet &&
+                    string.Equals(ActiveDeviceUpper, desiredUpper, StringComparison.Ordinal) &&
+                    string.Equals(ActiveDeviceLower, desiredLower, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                PortNumberUpper = Dynamixel.portHandler(desiredUpper);
+                PortNumberLower = Dynamixel.portHandler(desiredLower);
                 Dynamixel.packetHandler();
                 ActivePortSet = true;
+                ActiveDeviceUpper = desiredUpper;
+                ActiveDeviceLower = desiredLower;
             }
             catch (Exception ex)
             {
@@ -154,6 +167,9 @@ namespace Cartheur.Animals.Robot
                     Dynamixel.closePort(MotorFunctions.PortNumberUpper);
                     Dynamixel.closePort(MotorFunctions.PortNumberLower);
                     DynamixelMotorsInitialized = false;
+                    ActivePortSet = false;
+                    ActiveDeviceUpper = string.Empty;
+                    ActiveDeviceLower = string.Empty;
                 }
                 catch (Exception ex)
                 {
