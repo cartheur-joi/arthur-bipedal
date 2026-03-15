@@ -10,4 +10,7 @@ Arthur-Bipedal
     2120: Fixed. Now to have it throw and error if USB is not connected.
     2128: Pretty-print console output.
     2136: A solid baseline to hit the ground running next session.
+15.03.2026
+    1104: Want to grab an image of the existing windoze screens for reference.
+    1105: First target today is the Animation Training as this seems to touch on all the points: Remember, Action, Movement, db.
     
