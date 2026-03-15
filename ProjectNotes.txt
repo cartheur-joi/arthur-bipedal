@@ -13,4 +13,5 @@ Arthur-Bipedal
 15.03.2026
     1104: Want to grab an image of the existing windoze screens for reference.
     1105: First target today is the Animation Training as this seems to touch on all the points: Remember, Action, Movement, db.
+    1308: First pass at an implementation of the robot monitoring feature.
     
