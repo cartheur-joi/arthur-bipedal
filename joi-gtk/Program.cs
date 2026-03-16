@@ -69,6 +69,11 @@ internal static class Program
             RunSeatedHandshakeTest(shakes);
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--capture-stable-sitting", StringComparison.OrdinalIgnoreCase))
+        {
+            RunCaptureStableSittingPosition();
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--safety-report", StringComparison.OrdinalIgnoreCase))
         {
             int topN = ParseTopCount(args, 1, 5);
@@ -335,6 +340,14 @@ internal static class Program
         RobotControlService service = new();
         Console.WriteLine(service.Initialize());
         Console.WriteLine(service.ExecuteSeatedHandshakeSafetyTest(shakes: shakes, stepDurationMs: 450, interpolationSteps: 8));
+    }
+
+    static void RunCaptureStableSittingPosition()
+    {
+        RobotControlService service = new();
+        Console.WriteLine(service.Initialize());
+        Console.WriteLine(service.CaptureStableSittingPosition());
+        Console.WriteLine($"STABLE_SITTING_FLAG={service.StableSittingPositionCaptured}");
     }
 
     static void RunBodyCalibration(bool strict)

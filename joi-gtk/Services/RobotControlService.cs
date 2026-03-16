@@ -1,4 +1,5 @@
 using Cartheur.Animals.Robot;
+using Microsoft.Data.Sqlite;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -19,12 +20,14 @@ public sealed class RobotControlService
     readonly Dictionary<string, int> _motorMaxTemperatures = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> _motorMinVoltages = new(StringComparer.Ordinal);
     readonly string _safetyEventLogPath;
+    readonly string _stableSittingPositionPath;
     readonly BodyModelPolicy _bodyModelPolicy;
     readonly string _bodyCalibrationReportPath;
     int _safetyOverloadThreshold = MotorFunctions.PresentLoadAlarm;
     int _safetyMaxTemperature = 70;
     int _safetyMinVoltage = 90;
     bool _initialized;
+    bool _stableSittingPositionCaptured;
     public event Action<SafetyGateTrip> SafetyGateTripped;
 
     public RobotControlService()
@@ -34,6 +37,7 @@ public sealed class RobotControlService
         _walkController = new WalkController(_motorControl, _imuProvider);
         LoadMotorSafetyThresholdPolicy();
         _safetyEventLogPath = ResolveSafetyEventLogPath();
+        _stableSittingPositionPath = ResolveStableSittingPositionPath();
         _bodyModelPolicy = LoadBodyModelPolicy();
         _bodyCalibrationReportPath = ResolveBodyCalibrationReportPath();
     }
@@ -67,6 +71,7 @@ public sealed class RobotControlService
     }
 
     public bool IsInitialized => _initialized;
+    public bool StableSittingPositionCaptured => _stableSittingPositionCaptured;
     public int SafetyOverloadThreshold
     {
         get => _safetyOverloadThreshold;
@@ -110,6 +115,23 @@ public sealed class RobotControlService
                 snapshot[kv.Key] = kv.Value;
 
             return "Lower pose: " + string.Join(", ", snapshot.Select(kv => $"{kv.Key}={kv.Value}"));
+        });
+    }
+
+    public string CaptureStableSittingPosition()
+    {
+        const string positionTag = "Stable Sitting Position";
+        return ExecuteOnBus("CaptureStableSittingPosition", () =>
+        {
+            EnsureMaps();
+            Dictionary<string, int> snapshot = _motorControl.GetPresentPositions(Limbic.All);
+            if (snapshot == null || snapshot.Count == 0)
+                throw new InvalidOperationException("No present motor positions were available to capture.");
+
+            PersistStableSittingPosition(snapshot, positionTag);
+
+            _stableSittingPositionCaptured = true;
+            return $"Captured {snapshot.Count} motors and stored as '{positionTag}' (flag=true).";
         });
     }
 
@@ -813,6 +835,93 @@ public sealed class RobotControlService
                 "logs", "safety-events.log"));
             return workspacePath;
         }
+    }
+
+    static string ResolveStableSittingPositionPath()
+    {
+        string runtimePath = Path.Combine(AppContext.BaseDirectory, "db", "positions.db");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(runtimePath) ?? "db");
+            return runtimePath;
+        }
+        catch
+        {
+            return Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..",
+                "db", "positions.db"));
+        }
+    }
+
+    void PersistStableSittingPosition(IReadOnlyDictionary<string, int> snapshot, string positionTag)
+    {
+        if (snapshot == null || snapshot.Count == 0)
+            throw new InvalidOperationException("Cannot store empty stable sitting snapshot.");
+
+        using SqliteConnection connection = new($"Data Source={_stableSittingPositionPath}");
+        connection.Open();
+
+        using SqliteTransaction tx = connection.BeginTransaction();
+        EnsurePoseSnapshotSchema(connection, tx);
+        long snapshotId = InsertPoseSnapshot(connection, tx, positionTag, snapshot.Count);
+        foreach ((string motorName, int positionValue) in snapshot.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            using SqliteCommand insert = connection.CreateCommand();
+            insert.Transaction = tx;
+            insert.CommandText =
+                "INSERT INTO pose_snapshot_value (snapshot_id, motor_name, position_value) " +
+                "VALUES ($snapshotId, $motorName, $positionValue);";
+            insert.Parameters.AddWithValue("$snapshotId", snapshotId);
+            insert.Parameters.AddWithValue("$motorName", motorName);
+            insert.Parameters.AddWithValue("$positionValue", positionValue);
+            insert.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+    }
+
+    static void EnsurePoseSnapshotSchema(SqliteConnection connection, SqliteTransaction tx)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = tx;
+        command.CommandText =
+            "DROP TABLE IF EXISTS StablePosition;" +
+            "CREATE TABLE IF NOT EXISTS pose_snapshot (" +
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+            "pose_name TEXT NOT NULL, " +
+            "captured_at_utc TEXT NOT NULL, " +
+            "motor_count INTEGER NOT NULL, " +
+            "note TEXT NULL);" +
+            "CREATE TABLE IF NOT EXISTS pose_snapshot_value (" +
+            "snapshot_id INTEGER NOT NULL, " +
+            "motor_name TEXT NOT NULL, " +
+            "position_value INTEGER NOT NULL, " +
+            "PRIMARY KEY(snapshot_id, motor_name), " +
+            "FOREIGN KEY(snapshot_id) REFERENCES pose_snapshot(id) ON DELETE CASCADE);" +
+            "CREATE INDEX IF NOT EXISTS idx_pose_snapshot_name_time " +
+            "ON pose_snapshot(pose_name, captured_at_utc DESC);";
+        command.ExecuteNonQuery();
+    }
+
+    static long InsertPoseSnapshot(
+        SqliteConnection connection,
+        SqliteTransaction tx,
+        string poseName,
+        int motorCount)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = tx;
+        command.CommandText =
+            "INSERT INTO pose_snapshot (pose_name, captured_at_utc, motor_count, note) " +
+            "VALUES ($poseName, $capturedAtUtc, $motorCount, $note); " +
+            "SELECT last_insert_rowid();";
+        command.Parameters.AddWithValue("$poseName", poseName);
+        command.Parameters.AddWithValue("$capturedAtUtc", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$motorCount", motorCount);
+        command.Parameters.AddWithValue("$note", "Captured from live motors via --capture-stable-sitting.");
+        object id = command.ExecuteScalar();
+        return Convert.ToInt64(id);
     }
 
     static BodyModelPolicy LoadBodyModelPolicy()

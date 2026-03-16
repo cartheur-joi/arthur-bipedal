@@ -8,6 +8,7 @@
     <PackageReference Include="AeonVoice" Version="0.1.7" />
     <PackageReference Include="AeonVoice.Native" Version="0.1.7" GeneratePathProperty="true" />
     <PackageReference Include="GtkSharp" Version="3.24.24.95" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.10" />
     <PackageReference Include="System.IO.Ports" Version="9.0.1" />
     <PackageReference Include="Supertoys.PocketSphinx" Version="1.0.3" />
   </ItemGroup>
