@@ -9,6 +9,8 @@ All notable changes to this project are documented in this file.
 - Defined Animation Training purpose, scope, operating rule, milestones, and acceptance criteria.
 - Added immediate backlog focused on replacing hardcoded handshake with training-driven replay and deterministic seated recovery.
 - Linked epic as planning anchor from `README.md` and `TODO.md`.
+- Added reusable strict daily agent prompt at `docs/process/daily-agent-prompts.md` and linked it from `README.md` and `TODO.md`.
+- Documented mandatory development policy that Animation Training is the sole approved process for new pose/gait programming and that agent tasks must map to epic policy.
 
 ### Changed (Stable Sitting Capture Storage)
 - Added CLI capture command in `joi-gtk`: `--capture-stable-sitting`.

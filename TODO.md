@@ -4,6 +4,12 @@
 
 Formal planning anchor:
 - `docs/epics/animation-training-epic.md`
+- `docs/process/daily-agent-prompts.md`
+
+Mandatory policy for all agent tasks:
+- Animation Training is the sole approved method for pose/gait programming.
+- Every TODO item must map to epic milestones, acceptance criteria, or immediate backlog.
+- Any temporary hardcoded motion test must include a follow-up item to replace it with training-driven replay.
 
 1. Animation Training Epic Backlog (Immediate)
 - Execute items in `docs/epics/animation-training-epic.md` under `Immediate Backlog (Now)`.

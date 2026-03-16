@@ -21,9 +21,14 @@ The "walk three steps" UI handlers are currently empty stubs.
 The formal execution anchor for pose/routine programming is now documented in:
 
 - `docs/epics/animation-training-epic.md`
+- `docs/process/daily-agent-prompts.md`
 
 This epic defines the operating rule, milestones, acceptance criteria, and immediate
 backlog for making Animation Training the primary safe workflow.
+
+Mandatory policy:
+- Animation Training is the sole approved process for programming new poses and gaits.
+- Agent work must align to `docs/epics/animation-training-epic.md`.
 
 ## Motor Safety Threshold Policy (JSON)
 

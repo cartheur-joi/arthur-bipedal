@@ -1,7 +1,7 @@
 # Animation Training Epic
 
 ## Purpose
-Make Animation Training the primary, safe, repeatable way to program robot poses and routines.
+Make Animation Training the sole, safe, repeatable way to program robot poses and routines.
 
 ## Vision
 Operators demonstrate motion. The robot records structured frames, validates safety, and replays reliable routines with seated-baseline recovery on failures.
@@ -19,6 +19,12 @@ Operators demonstrate motion. The robot records structured frames, validates saf
 ## Operating Rule
 Every training day starts from `Stable Sitting Position` baseline capture.  
 No training routine runs unless baseline is valid for the current day.
+
+## Development Policy (Mandatory)
+- Animation Training is the only approved path for teaching poses and gait routines.
+- Any new feature or task must map to an Animation Training milestone or acceptance criterion.
+- Ad-hoc hardcoded motion routines are temporary diagnostics only and must be replaced by training-driven equivalents.
+- Agent work that bypasses training capture/replay policy is out of scope unless explicitly approved.
 
 ## Milestones
 1. Baseline & Safety Foundation
