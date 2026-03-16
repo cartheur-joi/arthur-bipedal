@@ -16,6 +16,15 @@ control library for a 25-DOF bipedal robot. The current codebase supports:
 The codebase does **not** yet implement a complete autonomous walking gait routine.
 The "walk three steps" UI handlers are currently empty stubs.
 
+## Animation Training Epic
+
+The formal execution anchor for pose/routine programming is now documented in:
+
+- `docs/epics/animation-training-epic.md`
+
+This epic defines the operating rule, milestones, acceptance criteria, and immediate
+backlog for making Animation Training the primary safe workflow.
+
 ## Motor Safety Threshold Policy (JSON)
 
 `joi-gtk` supports per-motor safety guardrails from a JSON policy file:

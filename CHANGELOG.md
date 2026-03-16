@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased] - 2026-03-14
 
+### Added (Animation Training Epic Kickoff)
+- Added formal epic document: `docs/epics/animation-training-epic.md`.
+- Defined Animation Training purpose, scope, operating rule, milestones, and acceptance criteria.
+- Added immediate backlog focused on replacing hardcoded handshake with training-driven replay and deterministic seated recovery.
+- Linked epic as planning anchor from `README.md` and `TODO.md`.
+
 ### Changed (Stable Sitting Capture Storage)
 - Added CLI capture command in `joi-gtk`: `--capture-stable-sitting`.
 - Stable sitting capture now persists via `Microsoft.Data.Sqlite` in `db/positions.db` (no `Remember` dependency in this flow).
