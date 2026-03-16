@@ -103,6 +103,24 @@ Rules:
 - Sweep uses motion safety checks (SafetyGate).
 - Stop or failure returns the motor to its original position.
 
+## Seated Handshake Safety Test
+
+For chair-seated validation of arm-side safety gates, `joi-gtk` now includes a conservative right-arm handshake routine.
+
+- GTK button:
+  - `Handshake (Seated)` on the main action row.
+- CLI:
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --seated-handshake-test`
+  - optional shake-count override:
+    - `dotnet run --project joi-gtk/joi-gtk.csproj -- --seated-handshake-test 4`
+
+Behavior:
+
+- Uses `SafetyGate` motion protection for the right-arm motor scope.
+- Applies a small shoulder raise and elbow bend/extend shake cycle around current pose.
+- Returns the arm to its starting pose in a `finally` block (best effort).
+- Any guardrail violation still triggers fail-safe torque-off via existing safety paths.
+
 ## MPU6050 Serial Integration (GTK)
 
 `joi-gtk` now supports MPU telemetry from an external Arduino bridge over USB serial.

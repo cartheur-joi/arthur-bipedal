@@ -92,6 +92,7 @@ public sealed class MainWindow : Window
         actionRow.PackStart(CreateButton("Read Lower Telemetry", (_, _) => RunAction("ReadLowerTelemetry", () => _robot.ReadLowerTelemetry())), false, false, 0);
         actionRow.PackStart(CreateButton("Read IMU", (_, _) => RunAction("ReadIMU", () => _robot.ReadImuTelemetry())), false, false, 0);
         actionRow.PackStart(CreateButton("Balance Step", (_, _) => RunAction("BalanceStep", () => _robot.ApplyStandingBalanceCompensationStep())), false, false, 0);
+        actionRow.PackStart(CreateButton("Handshake (Seated)", (_, _) => ExecuteSeatedHandshakeTest()), false, false, 0);
         actionRow.PackStart(CreateButton("Clear", (_, _) => ClearLogs()), false, false, 0);
         actionRow.PackStart(new Label("Status:") { Xalign = 0 }, false, false, 10);
         actionRow.PackStart(_statusLabel, false, false, 0);
@@ -216,6 +217,13 @@ public sealed class MainWindow : Window
                 interpolationSteps,
                 timeoutMs,
                 _requireFootContact.Active));
+    }
+
+    void ExecuteSeatedHandshakeTest()
+    {
+        RunAction(
+            "SeatedHandshake",
+            () => _robot.ExecuteSeatedHandshakeSafetyTest(shakes: 3, stepDurationMs: 450, interpolationSteps: 8));
     }
 
     bool TryReadWalkInputs(out int cycles, out int stepDurationMs, out int interpolationSteps, out int timeoutMs)

@@ -222,6 +222,85 @@ public sealed class RobotControlService
         });
     }
 
+    public string ExecuteSeatedHandshakeSafetyTest(int shakes = 3, int stepDurationMs = 450, int interpolationSteps = 8)
+    {
+        if (shakes < 1 || shakes > 8)
+            throw new ArgumentOutOfRangeException(nameof(shakes), "Handshake shake count must be between 1 and 8.");
+        if (stepDurationMs < 220)
+            throw new ArgumentOutOfRangeException(nameof(stepDurationMs), "Handshake step duration must be >= 220 ms.");
+        if (interpolationSteps < 3 || interpolationSteps > 30)
+            throw new ArgumentOutOfRangeException(nameof(interpolationSteps), "Handshake interpolation steps must be between 3 and 30.");
+
+        string[] armMotors = Limbic.RightArm.ToArray();
+        return ExecuteOnBus("SeatedHandshakeSafetyTest", () =>
+        {
+            _motorControl.SetTorqueOn(armMotors);
+            try
+            {
+                return ExecuteMotionWithSafety("SeatedHandshakeSafetyTest", armMotors, () =>
+                {
+                    Dictionary<string, int> origin = _motorControl.GetPresentPositions(armMotors);
+
+                    int shoulderLift = ClampArmDelta(origin["r_shoulder_y"], +55);
+                    int shoulderForward = ClampArmDelta(origin["r_shoulder_x"], -70);
+                    int shoulderWaveOut = ClampArmDelta(shoulderForward, -18);
+                    int shoulderWaveIn = ClampArmDelta(shoulderForward, +18);
+                    int forearmPresent = ClampArmDelta(origin["r_arm_z"], +55);
+                    int elbowBend = ClampArmDelta(origin["r_elbow_y"], -95);
+                    int elbowExtend = ClampArmDelta(origin["r_elbow_y"], -30);
+
+                    Dictionary<string, int> engagePose = BuildHandshakePose(
+                        origin,
+                        shoulderY: shoulderLift,
+                        shoulderX: shoulderForward,
+                        armZ: forearmPresent,
+                        elbowY: elbowBend);
+                    Dictionary<string, int> shakeInPose = BuildHandshakePose(
+                        origin,
+                        shoulderY: shoulderLift,
+                        shoulderX: shoulderWaveIn,
+                        armZ: forearmPresent,
+                        elbowY: elbowBend);
+                    Dictionary<string, int> shakeOutPose = BuildHandshakePose(
+                        origin,
+                        shoulderY: shoulderLift,
+                        shoulderX: shoulderWaveOut,
+                        armZ: forearmPresent,
+                        elbowY: elbowExtend);
+
+                    try
+                    {
+                        _motorControl.MoveMotorSequenceSmooth(engagePose, stepDurationMs, interpolationSteps);
+                        for (int i = 0; i < shakes; i++)
+                        {
+                            _motorControl.MoveMotorSequenceSmooth(shakeOutPose, stepDurationMs, interpolationSteps);
+                            _motorControl.MoveMotorSequenceSmooth(shakeInPose, stepDurationMs, interpolationSteps);
+                        }
+
+                        Dictionary<string, int> lowerPose = BuildHandshakePose(
+                            origin,
+                            shoulderY: origin["r_shoulder_y"],
+                            shoulderX: origin["r_shoulder_x"],
+                            armZ: origin["r_arm_z"],
+                            elbowY: elbowExtend);
+                        _motorControl.MoveMotorSequenceSmooth(lowerPose, stepDurationMs, interpolationSteps);
+                    }
+                    finally
+                    {
+                        // Always attempt to return to observed origin pose for seated tests.
+                        _motorControl.MoveMotorSequenceSmooth(origin, stepDurationMs, interpolationSteps);
+                    }
+
+                    return $"Seated handshake completed with {shakes} shake cycles (shoulder+forearm+elbow) and origin return.";
+                });
+            }
+            finally
+            {
+                _motorControl.SetTorqueOff(armMotors);
+            }
+        });
+    }
+
     public string EmergencyStopLower()
     {
         return ExecuteOnBus("EmergencyStop", () =>
@@ -755,6 +834,22 @@ public sealed class RobotControlService
     {
         // Conservative 10-bit guard used by existing gait and standing utilities.
         return Clamp(value, 0, 1023);
+    }
+
+    static int ClampArmDelta(int origin, int delta)
+    {
+        return ClampPosition(origin + delta);
+    }
+
+    static Dictionary<string, int> BuildHandshakePose(Dictionary<string, int> origin, int shoulderY, int shoulderX, int armZ, int elbowY)
+    {
+        return new Dictionary<string, int>
+        {
+            ["r_shoulder_y"] = shoulderY,
+            ["r_shoulder_x"] = shoulderX,
+            ["r_arm_z"] = armZ,
+            ["r_elbow_y"] = elbowY
+        };
     }
 }
 

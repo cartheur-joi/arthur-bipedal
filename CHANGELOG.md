@@ -22,6 +22,12 @@ All notable changes to this project are documented in this file.
 - Added `--safety-report` and `--safety-report-file <path>` commands in `joi-gtk/Program.cs`.
 - Reports now summarize parsed safety log lines, top events/actions/phases, top motors, guardrail hit counts, and recent safety trips.
 
+### Added (Seated Safety Test)
+- Added `ExecuteSeatedHandshakeSafetyTest(...)` to `RobotControlService` for chair-seated right-arm validation using existing `SafetyGate` protections.
+- Added GTK main-window action button: `Handshake (Seated)`.
+- Added CLI command: `--seated-handshake-test [shakes]`.
+- Routine returns the tested arm to origin pose after the handshake sequence (best effort), while retaining fail-safe torque-off behavior on safety trips.
+
 ### Changed (GTK Compatibility)
 - Replaced deprecated GTK calls in `MainWindow`:
   - `ScrolledWindow.AddWithViewport(...)` -> `Add(...)`

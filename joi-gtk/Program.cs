@@ -49,6 +49,12 @@ internal static class Program
             RunImuProbe();
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--seated-handshake-test", StringComparison.OrdinalIgnoreCase))
+        {
+            int shakes = ParseTopCount(args, 1, 3);
+            RunSeatedHandshakeTest(shakes);
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--safety-report", StringComparison.OrdinalIgnoreCase))
         {
             int topN = ParseTopCount(args, 1, 5);
@@ -308,6 +314,13 @@ internal static class Program
             Console.WriteLine(service.ReadImuTelemetry());
             Thread.Sleep(250);
         }
+    }
+
+    static void RunSeatedHandshakeTest(int shakes)
+    {
+        RobotControlService service = new();
+        Console.WriteLine(service.Initialize());
+        Console.WriteLine(service.ExecuteSeatedHandshakeSafetyTest(shakes: shakes, stepDurationMs: 450, interpolationSteps: 8));
     }
 
     static int ParseTopCount(string[] args, int index, int fallback)

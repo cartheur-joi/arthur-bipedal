@@ -3,6 +3,7 @@
 ## Next Steps
 
 1. Standing Threshold Calibration Session
+- Run seated handshake safety test first (`Handshake (Seated)` or `--seated-handshake-test`) to confirm arm-scope safety gating before standing work.
 - Start monitor, run safe sweeps for ankles/knees/hips, and tune `motor-overload-thresholds.json`.
 - Goal: no false trips at stable stance, immediate trips near hard-stop/load risk.
 
