@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased] - 2026-03-14
 
+### Changed (Animation Training Reliability + UX)
+- `AnimationTrainingWindow` training start/stop/capture flows now execute motor I/O on background tasks to avoid GTK UI-thread blocking.
+- Added stop/save synchronization and operation guards so `Stop Training` is honored even when a capture step is in-flight.
+- Added stop-queue behavior and clearer status/log messages for pending stop/save transitions.
+- Reduced training-window runtime churn:
+  - bounded console buffer,
+  - reduced per-frame logging density,
+  - safety polling skips overlapping cycles during active capture operations.
+
+### Changed (SQLite Provider Alignment)
+- Migrated `cartheur-animals-robot/Remember.cs` to `Microsoft.Data.Sqlite` APIs.
+- Updated `Cartheur.Animals.Robot.csproj` to remove direct `System.Data.SQLite` reference and use package-based `Microsoft.Data.Sqlite`.
+- Removed stale solution dependency on deleted `joi-animations/Cartheur.Animation.Joi.csproj`.
+
+### Removed (Stale Legacy Files)
+- Removed legacy Windows shortcut and unused SQLite binary artifacts from the repo:
+  - `cartheur-animals-robot/db/SQLiteBrowser.lnk`
+  - `cartheur-animals-robot/db/c-programs-sqlite`
+  - `cartheur-animals-robot/lib/System.Data.SQLite.dll`
+  - `cartheur-animals-robot/lib/win64/*`
+
 ### Added (Animation Training Epic Kickoff)
 - Added formal epic document: `docs/epics/animation-training-epic.md`.
 - Defined Animation Training purpose, scope, operating rule, milestones, and acceptance criteria.
@@ -146,8 +167,6 @@ All notable changes to this project are documented in this file.
 ### Changed (Integration)
 - Updated solution/project wiring to reference `cartheur-animals-robot` instead of the removed `dynamixel` project:
   - `Cartheur.Animation.Joi.sln` now points to `cartheur-animals-robot/Cartheur.Animals.Robot.csproj`.
-  - `joi-animations/Cartheur.Animation.Joi.csproj` now points to `../cartheur-animals-robot/Cartheur.Animals.Robot.csproj`.
-  - `joi-animations/Cartheur.Animation.Joi.csproj` SQLite hint path now points to `../cartheur-animals-robot/lib/System.Data.SQLite.dll`.
 
 ### Verified
 - `cartheur-animals-robot/Cartheur.Animals.Robot.csproj` builds successfully on .NET 9.

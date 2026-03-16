@@ -3,7 +3,6 @@ using joi_gtk.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace joi_gtk;
@@ -13,7 +12,7 @@ public sealed class AnimationTrainingWindow : Window
     readonly RobotControlService _robot;
     readonly AnimationTrainingService _training;
     readonly PocketSphinxVoiceCommandSource _voice = new();
-    readonly StringBuilder _log = new();
+    readonly Queue<string> _logLines = new();
 
     readonly ComboBoxText _armSelection = new();
     readonly Entry _replayPhraseEntry = new() { Text = "seated_handshake" };
@@ -24,6 +23,7 @@ public sealed class AnimationTrainingWindow : Window
     readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true, WrapMode = WrapMode.WordChar };
     readonly Button _startTrainingButton;
     readonly Button _pauseTrainingButton;
+    readonly Button _stopTrainingButton;
     uint _captureTimerId;
     uint _safetyTimerId;
     int _captureIntervalMs;
@@ -31,10 +31,14 @@ public sealed class AnimationTrainingWindow : Window
     bool _isPaused;
     bool _safetyPollInProgress;
     bool _baselinePolicyInProgress;
+    bool _trainingOperationInProgress;
+    bool _captureStepInProgress;
+    bool _stopRequested;
     int _lastSafetyErrorCount = -1;
     int _lastSafetyOverloadCount = -1;
     int _lastSafetyThermalCount = -1;
     int _lastSafetyVoltageCount = -1;
+    const int MaxLogLines = 320;
 
     public AnimationTrainingWindow(RobotControlService robot) : base("Animation Training")
     {
@@ -95,7 +99,9 @@ public sealed class AnimationTrainingWindow : Window
         _pauseTrainingButton = CreateButton("Pause Training", (_, _) => TogglePauseTraining());
         _pauseTrainingButton.Sensitive = false;
         actionRow.PackStart(_pauseTrainingButton, false, false, 0);
-        actionRow.PackStart(CreateButton("Stop Training", (_, _) => StopAndSave()), false, false, 0);
+        _stopTrainingButton = CreateButton("Stop Training", (_, _) => StopAndSave());
+        _stopTrainingButton.Sensitive = false;
+        actionRow.PackStart(_stopTrainingButton, false, false, 0);
         actionRow.PackStart(CreateButton("Replay Phrase", (_, _) => ReplayPhrase()), false, false, 0);
         actionRow.PackStart(CreateButton("Voice ON (Optional)", (_, _) => StartVoiceListener()), false, false, 0);
         actionRow.PackStart(CreateButton("Voice OFF", (_, _) => StopVoiceListener()), false, false, 0);
@@ -123,34 +129,60 @@ public sealed class AnimationTrainingWindow : Window
 
     void BeginTraining()
     {
+        _stopRequested = false;
+        if (_trainingOperationInProgress)
+        {
+            AppendLog("Training operation already in progress. Please wait...");
+            return;
+        }
         if (!TryGetCaptureInterval(out int intervalMs))
             return;
 
         StopCaptureTimer();
+        _trainingOperationInProgress = true;
+        _statusLabel.Text = "Training: starting...";
+        _startTrainingButton.Sensitive = false;
 
-        try
+        _ = Task.Run(() =>
         {
-            string arm = _armSelection.ActiveText ?? "Left Arm";
-            string replayPhrase = _replayPhraseEntry.Text;
-            Dictionary<string, int> firstFrame = _training.BeginSession(arm, replayPhrase);
-            _captureIntervalMs = intervalMs;
-            _hasActiveSession = true;
-            _isPaused = false;
-            _startTrainingButton.Sensitive = false;
-            _pauseTrainingButton.Sensitive = true;
-            _pauseTrainingButton.Label = "Pause Training";
-            _statusLabel.Text = "Training: awaiting input";
-            BeepSignal();
-            AppendLog($"Session started. arm={arm}, phrase=\"{replayPhrase}\"");
-            LogFrame("Captured", firstFrame);
-
-            StartCaptureTimer(_captureIntervalMs);
-        }
-        catch (Exception ex)
-        {
-            _statusLabel.Text = "Training: failed";
-            AppendLog($"Start ERROR: {ex.Message}");
-        }
+            try
+            {
+                string arm = _armSelection.ActiveText ?? "Left Arm";
+                string replayPhrase = _replayPhraseEntry.Text;
+                Dictionary<string, int> firstFrame = _training.BeginSession(arm, replayPhrase);
+                Application.Invoke(delegate
+                {
+                    _captureIntervalMs = intervalMs;
+                    _hasActiveSession = true;
+                    _isPaused = false;
+                    _startTrainingButton.Sensitive = false;
+                    _pauseTrainingButton.Sensitive = true;
+                    _stopTrainingButton.Sensitive = true;
+                    _pauseTrainingButton.Label = "Pause Training";
+                    _statusLabel.Text = "Training: awaiting input";
+                    BeepSignal();
+                    AppendLog($"Session started. arm={arm}, phrase=\"{replayPhrase}\"");
+                    LogFrame("Captured", firstFrame);
+                    StartCaptureTimer(_captureIntervalMs);
+                    if (_stopRequested)
+                        StopAndSave();
+                });
+            }
+            catch (Exception ex)
+            {
+                Application.Invoke(delegate
+                {
+                    _statusLabel.Text = "Training: failed";
+                    _startTrainingButton.Sensitive = !_baselinePolicyInProgress;
+                    _stopTrainingButton.Sensitive = false;
+                    AppendLog($"Start ERROR: {ex.Message}");
+                });
+            }
+            finally
+            {
+                _trainingOperationInProgress = false;
+            }
+        });
     }
 
     void EnsureInitializedInBackground()
@@ -239,24 +271,101 @@ public sealed class AnimationTrainingWindow : Window
 
     void StopAndSave()
     {
-        StopCaptureTimer();
-        try
+        if (!_hasActiveSession)
         {
-            int frameCount = _training.StopAndSaveSession();
-            _hasActiveSession = false;
-            _isPaused = false;
-            _startTrainingButton.Sensitive = true;
+            _stopRequested = false;
+            _statusLabel.Text = "Training: idle";
             _pauseTrainingButton.Sensitive = false;
-            _pauseTrainingButton.Label = "Pause Training";
-            _statusLabel.Text = "Training: saved";
-            PlayTrainingCompletedTone();
-            AppendLog($"Session saved ({frameCount} frames).");
+            _stopTrainingButton.Sensitive = false;
+            _startTrainingButton.Sensitive = !_baselinePolicyInProgress;
+            AppendLog("Stop ignored: no active training session.");
+            return;
         }
-        catch (Exception ex)
+
+        if (_trainingOperationInProgress)
         {
-            _statusLabel.Text = "Training: save failed";
-            AppendLog($"Save ERROR: {ex.Message}");
+            _stopRequested = true;
+            _statusLabel.Text = "Training: stop queued...";
+            AppendLog("Stop requested. Waiting for current operation to finish...");
+            return;
         }
+        StopCaptureTimer();
+        _trainingOperationInProgress = true;
+        _stopRequested = false;
+        _statusLabel.Text = "Training: stopping...";
+        _pauseTrainingButton.Sensitive = false;
+        _stopTrainingButton.Sensitive = false;
+        _startTrainingButton.Sensitive = false;
+
+        if (_captureStepInProgress)
+        {
+            AppendLog("Waiting for in-flight capture step to finish before saving...");
+            GLib.Timeout.Add(100, () =>
+            {
+                if (_captureStepInProgress)
+                    return true;
+
+                SaveStoppedTrainingSession();
+                return false;
+            });
+            return;
+        }
+
+        SaveStoppedTrainingSession();
+    }
+
+    void SaveStoppedTrainingSession()
+    {
+        _statusLabel.Text = "Training: saving...";
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                int frameCount = _training.StopAndSaveSession();
+                Application.Invoke(delegate
+                {
+                    _hasActiveSession = false;
+                    _isPaused = false;
+                    _startTrainingButton.Sensitive = !_baselinePolicyInProgress;
+                    _pauseTrainingButton.Sensitive = false;
+                    _stopTrainingButton.Sensitive = false;
+                    _pauseTrainingButton.Label = "Pause Training";
+                    _statusLabel.Text = "Training: saved";
+                    PlayTrainingCompletedTone();
+                    AppendLog($"Session saved ({frameCount} frames).");
+                });
+            }
+            catch (Exception ex)
+            {
+                Application.Invoke(delegate
+                {
+                    if (string.Equals(ex.Message, "No active animation training session.", StringComparison.Ordinal) ||
+                        string.Equals(ex.Message, "No captured frames to save.", StringComparison.Ordinal))
+                    {
+                        _hasActiveSession = false;
+                        _isPaused = false;
+                        _statusLabel.Text = "Training: stopped";
+                        _startTrainingButton.Sensitive = !_baselinePolicyInProgress;
+                        _pauseTrainingButton.Sensitive = false;
+                        _stopTrainingButton.Sensitive = false;
+                        _pauseTrainingButton.Label = "Pause Training";
+                        AppendLog($"Session stopped without save: {ex.Message}");
+                    }
+                    else
+                    {
+                        _statusLabel.Text = "Training: save failed";
+                        _startTrainingButton.Sensitive = !_baselinePolicyInProgress;
+                        _pauseTrainingButton.Sensitive = _hasActiveSession;
+                        _stopTrainingButton.Sensitive = _hasActiveSession;
+                        AppendLog($"Save ERROR: {ex.Message}");
+                    }
+                });
+            }
+            finally
+            {
+                _trainingOperationInProgress = false;
+            }
+        });
     }
 
     void TogglePauseTraining()
@@ -344,6 +453,10 @@ public sealed class AnimationTrainingWindow : Window
     void PollSafetySnapshot()
     {
         if (!_robot.IsInitialized || _safetyPollInProgress)
+            return;
+
+        // During active frame capture, avoid piling on additional bus IO.
+        if (_hasActiveSession && (_captureStepInProgress || _trainingOperationInProgress))
             return;
 
         _safetyPollInProgress = true;
@@ -482,21 +595,43 @@ public sealed class AnimationTrainingWindow : Window
         StopCaptureTimer();
         _captureTimerId = GLib.Timeout.Add((uint)intervalMs, () =>
         {
-            try
-            {
-                Dictionary<string, int> frame = _training.CaptureStep();
-                _statusLabel.Text = $"Training: step {_training.CapturedFrameCount}";
-                BeepSignal();
-                LogFrame("Captured", frame);
+            if (_captureStepInProgress || _trainingOperationInProgress || !_hasActiveSession)
                 return true;
-            }
-            catch (Exception ex)
+
+            _captureStepInProgress = true;
+            _ = Task.Run(() =>
             {
-                _statusLabel.Text = "Training: failed";
-                AppendLog($"Capture ERROR: {ex.Message}");
-                StopCaptureTimer();
-                return false;
-            }
+                try
+                {
+                    Dictionary<string, int> frame = _training.CaptureStep();
+                    Application.Invoke(delegate
+                    {
+                        _statusLabel.Text = $"Training: step {_training.CapturedFrameCount}";
+                        // Log every 5th frame to keep UI responsive during long sessions.
+                        if (_training.CapturedFrameCount <= 1 || _training.CapturedFrameCount % 5 == 0)
+                            LogFrame("Captured", frame);
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Application.Invoke(delegate
+                    {
+                        _statusLabel.Text = "Training: failed";
+                        AppendLog($"Capture ERROR: {ex.Message}");
+                        StopCaptureTimer();
+                    });
+                }
+                finally
+                {
+                    _captureStepInProgress = false;
+                    Application.Invoke(delegate
+                    {
+                        if (_stopRequested && _hasActiveSession && !_trainingOperationInProgress)
+                            StopAndSave();
+                    });
+                }
+            });
+            return true;
         });
     }
 
@@ -531,10 +666,13 @@ public sealed class AnimationTrainingWindow : Window
 
     void AppendLog(string line)
     {
-        _log.AppendLine(line);
-        _log.AppendLine();
+        _logLines.Enqueue(line);
+        while (_logLines.Count > MaxLogLines)
+            _logLines.Dequeue();
+
         if (_logView.Buffer == null)
             _logView.Buffer = new TextBuffer(new TextTagTable());
-        _logView.Buffer.Text = _log.ToString();
+
+        _logView.Buffer.Text = string.Join(Environment.NewLine + Environment.NewLine, _logLines);
     }
 }

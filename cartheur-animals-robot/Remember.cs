@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Data;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using System.Linq;
 
 namespace Cartheur.Animals.Robot
@@ -82,11 +82,11 @@ namespace Cartheur.Animals.Robot
             {
                 // Store the ID, verbose command, and the technical positions.
                 string directory = MapPath(DataBaseTag);
-                using (SQLiteConnection conn = new SQLiteConnection(@"Data Source=" + Path + directory))
+                using (SqliteConnection conn = new SqliteConnection(@"Data Source=" + Path + directory))
                 {
                     conn.Open();
-                    using (SQLiteTransaction trans = conn.BeginTransaction())
-                    using (SQLiteCommand cmd = conn.CreateCommand())
+                    using (SqliteTransaction trans = conn.BeginTransaction())
+                    using (SqliteCommand cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = "INSERT INTO AnimationMemory (AnimationID, VerboseCommand, Positions) VALUES (@animationId, @verboseCommand, @positions)";
                         cmd.Parameters.AddWithValue("@animationId", AnimationID);
@@ -113,14 +113,14 @@ namespace Cartheur.Animals.Robot
         public bool StorePosition(string positionType, Dictionary<string, int> positionData)
         {
             string directory = MapPath(DataBaseTag);
-            SQLiteConnection connection = new SQLiteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
 
             using (connection)
             {
                 connection.Open();
                 foreach (KeyValuePair<string, int> kvp in positionData)
                 {
-                    SQLiteCommand command = new SQLiteCommand
+                    SqliteCommand command = new SqliteCommand
                     {
                         Connection = connection,
                         CommandText = "INSERT INTO StablePosition (PositionType, MotorName, PositionValue) VALUES (@positionType, @motorName, @positionValue)"
@@ -144,14 +144,14 @@ namespace Cartheur.Animals.Robot
         public bool StoreTrainingSequence(int sequence, string trainingSelection, Dictionary<string, int> trainingMotorSequence, string dataBaseTag)
         {
             string directory = MapPath(dataBaseTag);
-            SQLiteConnection connection = new SQLiteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
 
             using (connection)
             {
                 connection.Open();
                 foreach (KeyValuePair<string, int> kvp in trainingMotorSequence)
                 {
-                    SQLiteCommand command = new SQLiteCommand
+                    SqliteCommand command = new SqliteCommand
                     {
                         Connection = connection,
                         CommandText = "INSERT INTO TrainingSequence (SequenceNumber, TrainingType, Motor, Position) VALUES (@sequenceNumber, @trainingType, @motor, @position)"
@@ -196,11 +196,11 @@ namespace Cartheur.Animals.Robot
                 return false;
             }
             string directory = MapPath(DataBaseTag);
-            SQLiteConnection connection = new SQLiteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
             using (connection)
             {
                 connection.Open();
-                SQLiteCommand command = new SQLiteCommand();
+                SqliteCommand command = new SqliteCommand();
                 command.Connection = connection;
                 command.CommandText = "DELETE FROM " + tableName;
                 command.ExecuteNonQuery();
@@ -218,21 +218,20 @@ namespace Cartheur.Animals.Robot
             if (tableName == "" || !AllowedTables.Contains(tableName))
                 return null;
             string directory = MapPath(DataBaseTag);
-            SQLiteConnection connection = new SQLiteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
             DataSet ds = new DataSet();
 
             using (connection)
             {
                 connection.Open();
-                SQLiteCommand command = new SQLiteCommand
+                SqliteCommand command = new SqliteCommand
                 {
                     Connection = connection,
                     CommandText = "SELECT * FROM " + tableName
                 };
-                SQLiteDataAdapter adapt = new SQLiteDataAdapter(command);
                 try
                 {
-                    adapt.Fill(ds);
+                    FillDataSet(command, ds, tableName);
                 }
                 catch (Exception ex)
                 {
@@ -245,11 +244,11 @@ namespace Cartheur.Animals.Robot
         {
             // SELECT PositionValue FROM StablePosition WHERE MotorName='r_hip_x'
             string directory = MapPath(dataBaseTag);
-            SQLiteConnection connection = new SQLiteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
             using (connection)
             {
                 connection.Open();
-                SQLiteCommand command = new SQLiteCommand
+                SqliteCommand command = new SqliteCommand
                 {
                     Connection = connection,
                     CommandText = "SELECT PositionValue FROM StablePosition WHERE MotorName = @motorName LIMIT 1"
@@ -289,18 +288,19 @@ namespace Cartheur.Animals.Robot
             {
                 // Recall the animation data.
                 string directory = MapPath(DataBaseTag);
-                SQLiteConnection conn = new SQLiteConnection(@"Data Source=" + Path + directory);
-                SQLiteCommand cmd = new SQLiteCommand();
                 DataSet ds = new DataSet();
-                cmd = conn.CreateCommand();
-                cmd.CommandText = "SELECT * FROM AnimationMemory WHERE VerboseCommand = @command";
-                cmd.Parameters.AddWithValue("@command", command);
-                SQLiteDataAdapter adapt = new SQLiteDataAdapter(cmd);
-                adapt.Fill(ds);
-                conn.Close();
+                using (SqliteConnection conn = new SqliteConnection(@"Data Source=" + Path + directory))
+                {
+                    conn.Open();
+                    using (SqliteCommand cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT * FROM AnimationMemory WHERE VerboseCommand = @command";
+                        cmd.Parameters.AddWithValue("@command", command);
+                        FillDataSet(cmd, ds, "AnimationMemory");
+                    }
+                }
                 if (autoParse && ds.Tables.Count > 0 && ds.Tables[0].Rows.Count > 0)
                     ParseAnimation(ds, command);
-                adapt.Dispose();
 
             }
             catch (Exception ex)
@@ -346,6 +346,26 @@ namespace Cartheur.Animals.Robot
         {
             string zebra = AppDomain.CurrentDomain.BaseDirectory.ToString();
             return System.IO.Path.Combine(zebra, path);
+        }
+
+        static void FillDataSet(SqliteCommand command, DataSet dataSet, string tableName)
+        {
+            using (SqliteDataReader reader = command.ExecuteReader())
+            {
+                DataTable table = new DataTable(tableName);
+                for (int i = 0; i < reader.FieldCount; i++)
+                    table.Columns.Add(reader.GetName(i), typeof(object));
+
+                while (reader.Read())
+                {
+                    DataRow row = table.NewRow();
+                    for (int i = 0; i < reader.FieldCount; i++)
+                        row[i] = reader.IsDBNull(i) ? DBNull.Value : reader.GetValue(i);
+                    table.Rows.Add(row);
+                }
+
+                dataSet.Tables.Add(table);
+            }
         }
     }
 }

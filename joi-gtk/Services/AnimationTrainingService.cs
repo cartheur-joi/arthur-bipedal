@@ -11,6 +11,7 @@ public sealed class AnimationTrainingService
 {
     readonly RobotControlService _robot;
     readonly Remember _trainingStore;
+    readonly object _sessionGate = new();
     readonly List<Dictionary<string, int>> _capturedFrames = new();
     string[] _activeMotors = Limbic.LeftArm;
     string _activeTrainingType = string.Empty;
@@ -21,44 +22,76 @@ public sealed class AnimationTrainingService
         _trainingStore = new Remember(@"\db\trainings.db");
     }
 
-    public int CapturedFrameCount => _capturedFrames.Count;
+    public int CapturedFrameCount
+    {
+        get
+        {
+            lock (_sessionGate)
+                return _capturedFrames.Count;
+        }
+    }
 
     public Dictionary<string, int> BeginSession(string armSelection, string replayPhrase)
     {
         _robot.EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 15);
         string normalizedPhrase = NormalizeReplayPhrase(replayPhrase);
-        _activeMotors = ResolveArmMotors(armSelection);
-        _activeTrainingType = BuildTrainingType(normalizedPhrase, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
-        _capturedFrames.Clear();
-        _robot.SetTorqueOff(_activeMotors);
+        string[] activeMotors = ResolveArmMotors(armSelection);
+        lock (_sessionGate)
+        {
+            _activeMotors = activeMotors;
+            _activeTrainingType = BuildTrainingType(normalizedPhrase, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            _capturedFrames.Clear();
+        }
+        _robot.SetTorqueOff(activeMotors);
         return CaptureStep();
     }
 
     public Dictionary<string, int> CaptureStep()
     {
-        Dictionary<string, int> frame = _robot.ReadPositions(_activeMotors);
-        _capturedFrames.Add(new Dictionary<string, int>(frame));
+        string[] activeMotors;
+        lock (_sessionGate)
+        {
+            if (string.IsNullOrWhiteSpace(_activeTrainingType))
+                throw new InvalidOperationException("No active animation training session.");
+            activeMotors = _activeMotors.ToArray();
+        }
+
+        Dictionary<string, int> frame = _robot.ReadPositions(activeMotors);
+        lock (_sessionGate)
+            _capturedFrames.Add(new Dictionary<string, int>(frame));
         return frame;
     }
 
     public int StopAndSaveSession()
     {
-        if (string.IsNullOrWhiteSpace(_activeTrainingType))
-            throw new InvalidOperationException("No active animation training session.");
-        if (_capturedFrames.Count == 0)
-            throw new InvalidOperationException("No captured frames to save.");
+        string trainingType;
+        string[] activeMotors;
+        List<Dictionary<string, int>> framesToPersist;
+        lock (_sessionGate)
+        {
+            if (string.IsNullOrWhiteSpace(_activeTrainingType))
+                throw new InvalidOperationException("No active animation training session.");
+            if (_capturedFrames.Count == 0)
+                throw new InvalidOperationException("No captured frames to save.");
+
+            trainingType = _activeTrainingType;
+            activeMotors = _activeMotors.ToArray();
+            framesToPersist = _capturedFrames
+                .Select(frame => new Dictionary<string, int>(frame))
+                .ToList();
+            _capturedFrames.Clear();
+            _activeTrainingType = string.Empty;
+        }
 
         int sequence = 1;
-        foreach (Dictionary<string, int> frame in _capturedFrames)
+        foreach (Dictionary<string, int> frame in framesToPersist)
         {
-            _trainingStore.StoreTrainingSequence(sequence, _activeTrainingType, frame, _trainingStore.DataBaseTag);
+            _trainingStore.StoreTrainingSequence(sequence, trainingType, frame, _trainingStore.DataBaseTag);
             sequence++;
         }
 
-        int frameCount = _capturedFrames.Count;
-        _capturedFrames.Clear();
-        _activeTrainingType = string.Empty;
-        _robot.SetTorqueOn(_activeMotors);
+        int frameCount = framesToPersist.Count;
+        _robot.SetTorqueOn(activeMotors);
         return frameCount;
     }
 
