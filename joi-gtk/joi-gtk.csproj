@@ -10,7 +10,7 @@
     <PackageReference Include="GtkSharp" Version="3.24.24.95" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.10" />
     <PackageReference Include="System.IO.Ports" Version="9.0.1" />
-    <PackageReference Include="Supertoys.PocketSphinx" Version="1.0.3" />
+    <PackageReference Include="Supertoys.PocketSphinx" Version="1.2.1" />
   </ItemGroup>
 
   <ItemGroup>

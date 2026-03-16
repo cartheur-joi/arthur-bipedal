@@ -46,6 +46,14 @@ All notable changes to this project are documented in this file.
 - Main GTK action flow now announces what the robot intends to do before executing user commands.
 - Added CLI diagnostic command: `--voice-test [text...]`.
 
+### Added (Speech Recognition)
+- Updated `Supertoys.PocketSphinx` package in `joi-gtk` to `1.2.1`.
+- Added `RobotSpeechRecognitionService` with repo-scoped runtime/model path resolution from app output.
+- Added CLI diagnostics:
+  - `--speech-recog-status`
+  - `--speech-recog-file <audio-path>`
+- Added README documentation for scope policy, runtime requirements, and usage.
+
 ### Added (Thermal + Voltage Guardrails)
 - Extended `joi-gtk/config/motor-overload-thresholds.json` to support safety defaults and per-motor guardrails for:
   - overload threshold,

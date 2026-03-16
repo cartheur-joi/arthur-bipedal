@@ -205,6 +205,33 @@ CLI check:
 - custom phrase:
   - `dotnet run --project joi-gtk/joi-gtk.csproj -- --voice-test \"I will move to seated calibration pose.\"`
 
+## Speech Recognition (Supertoys.PocketSphinx)
+
+`joi-gtk` now includes repo-scoped speech recognition integration using
+`Supertoys.PocketSphinx`.
+
+Scope policy:
+- Runtime executable and model paths are resolved from app output only.
+- No global system path probing is used for recognition runtime selection.
+
+Runtime requirements:
+- Build/runtime on `linux-arm64` where bundled PocketSphinx runtime exists.
+- Bundled output paths expected:
+  - `runtimes/linux-arm64/native/pocketsphinx`
+  - `models/en-us/en-us`
+  - `models/en-us/cmudict-en-us.dict`
+  - `models/en-us/en-us.lm.bin`
+
+Optional environment variables:
+- `ARTHUR_SPEECH_RECOGNITION_ENABLED=0` to disable recognition integration
+- `ARTHUR_POCKETSPHINX_RID` to force runtime identifier (default: package runtime helper)
+
+CLI checks:
+- runtime status:
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --speech-recog-status`
+- recognize an audio file (`.raw`/`.wav`):
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --speech-recog-file /absolute/path/to/audio.wav`
+
 ## MPU6050 Serial Integration (GTK)
 
 `joi-gtk` now supports MPU telemetry from an external Arduino bridge over USB serial.

@@ -57,6 +57,16 @@ internal static class Program
             RunVoiceTest(text);
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--speech-recog-status", StringComparison.OrdinalIgnoreCase))
+        {
+            RunSpeechRecognitionStatus();
+            return;
+        }
+        if (args.Length > 1 && string.Equals(args[0], "--speech-recog-file", StringComparison.OrdinalIgnoreCase))
+        {
+            RunSpeechRecognitionFile(args[1]);
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--body-calibrate", StringComparison.OrdinalIgnoreCase))
         {
             bool strict = !args.Skip(1).Any(a => string.Equals(a, "--non-strict", StringComparison.OrdinalIgnoreCase));
@@ -378,6 +388,31 @@ internal static class Program
 
         voice.Announce(text);
         Console.WriteLine("VOICE spoke test phrase.");
+    }
+
+    static void RunSpeechRecognitionStatus()
+    {
+        RobotSpeechRecognitionService speech = new();
+        Console.WriteLine($"SPEECH_RECOG status={speech.Status}");
+        Console.WriteLine($"SPEECH_RECOG available={speech.IsAvailable}");
+        Console.WriteLine($"SPEECH_RECOG rid={speech.RuntimeIdentifier}");
+        Console.WriteLine($"SPEECH_RECOG executable={speech.ExecutablePath}");
+        Console.WriteLine($"SPEECH_RECOG models={speech.ModelsDirectory}");
+    }
+
+    static void RunSpeechRecognitionFile(string audioPath)
+    {
+        RobotSpeechRecognitionService speech = new();
+        Console.WriteLine($"SPEECH_RECOG status={speech.Status}");
+        if (!speech.IsAvailable)
+            return;
+
+        SpeechRecognitionRunResult result = speech.RecognizeFileAsync(audioPath).GetAwaiter().GetResult();
+        Console.WriteLine($"SPEECH_RECOG file={Path.GetFullPath(audioPath)}");
+        Console.WriteLine($"SPEECH_RECOG success={result.Success} exit_code={result.ExitCode} confidence={result.Confidence:F4}");
+        Console.WriteLine($"SPEECH_RECOG hypothesis={result.Hypothesis}");
+        if (!string.IsNullOrWhiteSpace(result.StandardError))
+            Console.WriteLine($"SPEECH_RECOG stderr={result.StandardError.Trim()}");
     }
 
     static int ParseTopCount(string[] args, int index, int fallback)
