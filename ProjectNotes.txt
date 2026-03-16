@@ -42,4 +42,5 @@ Arthur-Bipedal
     1657: Audible tones for 'start' and 'stop' animation training.
     1816: Now into training proper and working through the issues.
     1823: A lot of old shit hanging around.
+    2015: Updated the prompt and formally ending today's session.
     
