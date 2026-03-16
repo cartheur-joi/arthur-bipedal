@@ -5,8 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AeonVoice" Version="0.1.4" />
-    <PackageReference Include="AeonVoice.Native" Version="0.1.4" />
+    <PackageReference Include="AeonVoice" Version="0.1.6" />
+    <PackageReference Include="AeonVoice.Native" Version="0.1.6" GeneratePathProperty="true" />
     <PackageReference Include="GtkSharp" Version="3.24.24.95" />
     <PackageReference Include="System.IO.Ports" Version="9.0.1" />
     <PackageReference Include="Supertoys.PocketSphinx" Version="1.0.3" />
@@ -38,4 +38,17 @@
   <ItemGroup>
     <ProjectReference Include="..\cartheur-animals-robot\Cartheur.Animals.Robot.csproj" />
   </ItemGroup>
+
+  <Target Name="AeonVoice_ForceResolvedNativeAssets" AfterTargets="Build" Condition="'$(PkgAeonVoice_Native)' != ''">
+    <ItemGroup>
+      <_AeonVoiceNativeArm64 Include="$(PkgAeonVoice_Native)/linux-arm64/native/libAeonVoice*.so*" />
+      <_AeonVoiceNativex64 Include="$(PkgAeonVoice_Native)/linux-x64/native/libAeonVoice*.so*" />
+      <_AeonVoiceNative Include="@(_AeonVoiceNativeArm64)" Condition="$([System.String]::Copy('$(NETCoreSdkPortableRuntimeIdentifier)').Contains('arm64'))" />
+      <_AeonVoiceNative Include="@(_AeonVoiceNativex64)" Condition="$([System.String]::Copy('$(NETCoreSdkPortableRuntimeIdentifier)').Contains('x64'))" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_AeonVoiceNative)" DestinationFolder="$(OutDir)" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="@(_AeonVoiceNativeArm64)" DestinationFolder="$(OutDir)runtimes/linux-arm64/native" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
+    <Copy SourceFiles="@(_AeonVoiceNativex64)" DestinationFolder="$(OutDir)runtimes/linux-x64/native" OverwriteReadOnlyFiles="true" SkipUnchangedFiles="false" />
+  </Target>
 </Project>

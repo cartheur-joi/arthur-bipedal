@@ -3,6 +3,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace joi_gtk.Services;
@@ -28,36 +29,39 @@ public sealed class RobotNarrationService : IRobotNarrationService, IDisposable
             return;
         }
 
+        PreloadBundledNativeLibraries();
+
         _voiceProfile = Environment.GetEnvironmentVariable("ARTHUR_AEONVOICE_VOICE") ?? "Leena";
-        string dataPath = FirstNonEmpty(
-            Environment.GetEnvironmentVariable("ARTHUR_AEONVOICE_DATA_PATH"),
-            Environment.GetEnvironmentVariable("AEONVOICE_DATA_PATH"));
-        string configPath = FirstNonEmpty(
-            Environment.GetEnvironmentVariable("ARTHUR_AEONVOICE_CONFIG_PATH"),
-            Environment.GetEnvironmentVariable("AEONVOICE_CONFIG_PATH"));
-
-        if (string.IsNullOrWhiteSpace(dataPath) || string.IsNullOrWhiteSpace(configPath))
+        if (TryCreateAutoDetectedEngine(out AeonVoiceEngine autoEngine, out string autoStatus))
         {
-            Status = "Voice unavailable: set AEONVOICE_DATA_PATH and AEONVOICE_CONFIG_PATH.";
-            return;
-        }
-
-        if (!Directory.Exists(dataPath) || !Directory.Exists(configPath))
-        {
-            Status = $"Voice unavailable: AeonVoice paths missing (data={dataPath}, config={configPath}).";
-            return;
-        }
-
-        try
-        {
-            _engine = new AeonVoiceEngine(dataPath, configPath);
+            _engine = autoEngine;
             IsAvailable = true;
-            Status = $"Voice ready (provider=AeonVoice, voice={_voiceProfile}).";
+            Status = autoStatus;
+            return;
         }
-        catch (Exception ex)
+
+        string bundledDataPath = Path.Combine(AppContext.BaseDirectory, "aeonvoice", "data");
+        string bundledConfigPath = Path.Combine(AppContext.BaseDirectory, "aeonvoice", "config");
+        if (Directory.Exists(bundledDataPath) && Directory.Exists(bundledConfigPath))
         {
-            Status = $"Voice unavailable: {ex.Message}";
+            try
+            {
+                _engine = new AeonVoiceEngine(bundledDataPath, bundledConfigPath);
+                IsAvailable = true;
+                Status =
+                    $"Voice ready (provider=AeonVoice, mode=bundled-paths, voice={_voiceProfile}, " +
+                    $"data={bundledDataPath}, config={bundledConfigPath}).";
+                return;
+            }
+            catch (Exception bundledEx)
+            {
+                autoStatus += $" | bundled-paths failed: {bundledEx.Message}";
+            }
         }
+
+        Status =
+            $"Voice unavailable: {autoStatus}. " +
+            "Only repo-scoped packaged resources were attempted (auto-detect + bundled output paths).";
     }
 
     public bool IsAvailable { get; }
@@ -113,9 +117,86 @@ public sealed class RobotNarrationService : IRobotNarrationService, IDisposable
         return true;
     }
 
-    static string FirstNonEmpty(params string[] values)
+    static void PreloadBundledNativeLibraries()
     {
-        return values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
+        try
+        {
+            string rid = RuntimeInformation.ProcessArchitecture switch
+            {
+                Architecture.Arm64 => "linux-arm64",
+                Architecture.X64 => "linux-x64",
+                _ => string.Empty
+            };
+            if (string.IsNullOrWhiteSpace(rid))
+                return;
+
+            string baseDir = AppContext.BaseDirectory;
+            string runtimeNativeDir = Path.Combine(baseDir, "runtimes", rid, "native");
+            string[] candidateDirs = new[] { runtimeNativeDir, baseDir };
+            string[] loadOrder =
+            {
+                "libAeonVoice_core.so.10.1.0",
+                "libAeonVoice_core.so.10",
+                "libAeonVoice_core.so",
+                "libAeonVoice_audio.so.2.0.0",
+                "libAeonVoice_audio.so.2",
+                "libAeonVoice_audio.so",
+                "libAeonVoice.so.5.2.0",
+                "libAeonVoice.so.5",
+                "libAeonVoice.so"
+            };
+
+            foreach (string dir in candidateDirs)
+            {
+                if (!Directory.Exists(dir))
+                    continue;
+
+                foreach (string fileName in loadOrder)
+                {
+                    string fullPath = Path.Combine(dir, fileName);
+                    if (!File.Exists(fullPath))
+                        continue;
+
+                    NativeLibrary.TryLoad(fullPath, out _);
+                }
+            }
+        }
+        catch
+        {
+            // Best effort only; speech must never interrupt control flow.
+        }
+    }
+
+    bool TryCreateAutoDetectedEngine(out AeonVoiceEngine engine, out string status)
+    {
+        engine = null;
+        status = "Voice auto-detect unavailable.";
+        try
+        {
+            engine = new AeonVoiceEngine();
+            string baseDir = AppContext.BaseDirectory;
+            string dataPath = Path.Combine(baseDir, "aeonvoice", "data");
+            string configPath = Path.Combine(baseDir, "aeonvoice", "config");
+            status =
+                $"Voice ready (provider=AeonVoice, mode=auto-detect, voice={_voiceProfile}, " +
+                $"data={(Directory.Exists(dataPath) ? dataPath : "n/a")}, " +
+                $"config={(Directory.Exists(configPath) ? configPath : "n/a")}).";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            status = $"Voice auto-detect failed: {ex.Message}";
+            try
+            {
+                engine?.Dispose();
+            }
+            catch
+            {
+                // Ignore
+            }
+            engine = null;
+            return false;
+        }
     }
 
     static string NormalizeSpeechText(string text)
