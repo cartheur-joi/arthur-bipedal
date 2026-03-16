@@ -23,4 +23,7 @@ Arthur-Bipedal
 16.03.2026
     744: Resuming progression. Trying a new policy of the "next session prompt".
     912: Complete. Now ready for incremental testing toward animation training, or perhaps pose hardening.
+    915: Starting with a "handshake" test.
+    925: Good but can find trouble fast. Working on an "internal visualization" of "its" body.
+    943: A "startup calibration" algorithm is available to train the robot on its body geometry. Is a fully mental "agent" required?
     
