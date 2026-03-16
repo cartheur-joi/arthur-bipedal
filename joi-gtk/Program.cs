@@ -86,15 +86,25 @@ internal static class Program
         Console.WriteLine(service.Initialize());
         var snapshot = service.ReadMotorMonitoringSnapshot(MotorFunctions.PresentLoadAlarm);
         int overloads = 0;
+        int thermalViolations = 0;
+        int voltageViolations = 0;
         int commErrors = 0;
         for (int i = 0; i < snapshot.Count; i++)
         {
             var row = snapshot[i];
             if (row.Overload) overloads++;
+            if (row.ThermalViolation) thermalViolations++;
+            if (row.VoltageViolation) voltageViolations++;
             if (!row.CommunicationOk) commErrors++;
-            Console.WriteLine($"{row.MotorName}({row.ID}) zone={row.Location} torque={(row.TorqueOn ? "ON" : "OFF")} load={row.Load} overload={row.Overload} comm={(row.CommunicationOk ? "OK" : "ERR")}");
+            Console.WriteLine(
+                $"{row.MotorName}({row.ID}) zone={row.Location} torque={(row.TorqueOn ? "ON" : "OFF")} " +
+                $"load={row.Load}/{row.OverloadThreshold} temp={row.Temperature}/{row.MaxTemperature} " +
+                $"volt={row.Voltage}/{row.MinVoltage} overload={row.Overload} thermal={row.ThermalViolation} " +
+                $"voltage={row.VoltageViolation} comm={(row.CommunicationOk ? "OK" : "ERR")}");
         }
-        Console.WriteLine($"SUMMARY total={snapshot.Count} overloads={overloads} comm_errors={commErrors}");
+        Console.WriteLine(
+            $"SUMMARY total={snapshot.Count} overloads={overloads} thermal={thermalViolations} " +
+            $"voltage={voltageViolations} comm_errors={commErrors}");
         if (snapshot.Count(r => r.Location == "upper" && !r.CommunicationOk) > 0)
             ScanUpperBusBaud();
     }

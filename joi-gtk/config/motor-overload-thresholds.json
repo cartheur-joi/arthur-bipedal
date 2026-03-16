@@ -1,15 +1,51 @@
 {
-  "defaultThreshold": 900,
+  "defaults": {
+    "overloadThreshold": 900,
+    "maxTemperature": 70,
+    "minVoltage": 90
+  },
   "motors": {
-    "l_ankle_y": 680,
-    "r_ankle_y": 680,
-    "l_knee_y": 760,
-    "r_knee_y": 760,
-    "l_hip_x": 820,
-    "r_hip_x": 820,
-    "l_hip_y": 820,
-    "r_hip_y": 820,
-    "l_hip_z": 820,
-    "r_hip_z": 820
+    "l_ankle_y": {
+      "overloadThreshold": 680,
+      "maxTemperature": 68,
+      "minVoltage": 92
+    },
+    "r_ankle_y": {
+      "overloadThreshold": 680,
+      "maxTemperature": 68,
+      "minVoltage": 92
+    },
+    "l_knee_y": {
+      "overloadThreshold": 760,
+      "maxTemperature": 68,
+      "minVoltage": 92
+    },
+    "r_knee_y": {
+      "overloadThreshold": 760,
+      "maxTemperature": 68,
+      "minVoltage": 92
+    },
+    "l_hip_x": {
+      "overloadThreshold": 820,
+      "maxTemperature": 69,
+      "minVoltage": 91
+    },
+    "r_hip_x": {
+      "overloadThreshold": 820,
+      "maxTemperature": 69,
+      "minVoltage": 91
+    },
+    "l_hip_y": {
+      "overloadThreshold": 820
+    },
+    "r_hip_y": {
+      "overloadThreshold": 820
+    },
+    "l_hip_z": {
+      "overloadThreshold": 820
+    },
+    "r_hip_z": {
+      "overloadThreshold": 820
+    }
   }
 }

@@ -4,6 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased] - 2026-03-14
 
+### Added (Thermal + Voltage Guardrails)
+- Extended `joi-gtk/config/motor-overload-thresholds.json` to support safety defaults and per-motor guardrails for:
+  - overload threshold,
+  - max temperature,
+  - min voltage.
+- `RobotControlService` now loads and applies thermal/voltage policy values with per-motor override then default fallback, while remaining backward compatible with legacy numeric motor threshold entries.
+- `SafetyGate` checks now trip on thermal and voltage violations in addition to communication, overload, and torque-off conditions.
+- Safety trip and monitor detail payloads now include guardrail-specific values (`load/threshold`, `temperature/max`, `voltage/min`) for operator diagnosis.
+
+### Changed (Operator Monitoring)
+- Main GTK monitor summary/log output now reports overload/thermal/voltage alert counts and fingerprints.
+- Animation training safety polling now surfaces thermal/voltage alert counts and beeps on any guardrail alert.
+- CLI `--self-test` output now includes per-motor threshold context and thermal/voltage violation counts in summary.
+
 ### Added (Safety)
 - Added a centralized motor `SafetyGate` in `joi-gtk/Services/RobotControlService.cs` for motion commands:
   - Runs motor-state checks before and after motion execution.

@@ -48,7 +48,7 @@ public sealed class MainWindow : Window
     AnimationTrainingWindow _animationTrainingWindow;
     CameraWindow _cameraWindow;
     uint _monitorTimerId;
-    string _lastOverloadFingerprint = string.Empty;
+    string _lastAlertFingerprint = string.Empty;
     bool _flashPhase;
     bool _monitorPollInProgress;
     bool _safetyAlertActive;
@@ -719,15 +719,32 @@ public sealed class MainWindow : Window
                         .Where(r => r.Overload)
                         .Select(r => $"{r.MotorName}({r.Load})")
                         .ToArray();
+                    var thermalViolations = snapshot
+                        .Where(r => r.ThermalViolation)
+                        .Select(r => $"{r.MotorName}({r.Temperature}>={r.MaxTemperature})")
+                        .ToArray();
+                    var voltageViolations = snapshot
+                        .Where(r => r.VoltageViolation)
+                        .Select(r => $"{r.MotorName}({r.Voltage}<={r.MinVoltage})")
+                        .ToArray();
 
-                    string overloadFingerprint = string.Join("|", overloads);
-                    if (overloads.Length > 0)
+                    string alertFingerprint = string.Join(
+                        "|",
+                        overloads
+                            .Select(value => "O:" + value)
+                            .Concat(thermalViolations.Select(value => "T:" + value))
+                            .Concat(voltageViolations.Select(value => "V:" + value)));
+                    if (overloads.Length > 0 || thermalViolations.Length > 0 || voltageViolations.Length > 0)
                     {
                         _statusLabel.Text = "Monitoring: ALERT";
-                        _monitorSummaryLabel.Text = $"Overload(s): {overloads.Length}";
-                        if (_lastOverloadFingerprint != overloadFingerprint)
+                        _monitorSummaryLabel.Text =
+                            $"Alerts: overload={overloads.Length}, thermal={thermalViolations.Length}, voltage={voltageViolations.Length}";
+                        if (_lastAlertFingerprint != alertFingerprint)
                         {
-                            string line = $"[{actionName}] OVERLOAD {string.Join(", ", overloads)}";
+                            string line =
+                                $"[{actionName}] ALERT overload=[{string.Join(", ", overloads.DefaultIfEmpty("none"))}] " +
+                                $"thermal=[{string.Join(", ", thermalViolations.DefaultIfEmpty("none"))}] " +
+                                $"voltage=[{string.Join(", ", voltageViolations.DefaultIfEmpty("none"))}]";
                             AppendLog(line);
                             WriteConsoleEntry(line);
                         }
@@ -744,7 +761,7 @@ public sealed class MainWindow : Window
                         }
                     }
 
-                    _lastOverloadFingerprint = overloadFingerprint;
+                    _lastAlertFingerprint = alertFingerprint;
                 });
             }
             catch (Exception ex)

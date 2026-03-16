@@ -18,7 +18,7 @@ The "walk three steps" UI handlers are currently empty stubs.
 
 ## Motor Safety Threshold Policy (JSON)
 
-`joi-gtk` now supports per-motor overload thresholds from a JSON policy file:
+`joi-gtk` supports per-motor safety guardrails from a JSON policy file:
 
 - Source file: `joi-gtk/config/motor-overload-thresholds.json`
 - Runtime copy: `joi-gtk/bin/Debug/net9.0/config/motor-overload-thresholds.json`
@@ -28,18 +28,29 @@ Policy format:
 
 ```json
 {
-  "defaultThreshold": 900,
+  "defaults": {
+    "overloadThreshold": 900,
+    "maxTemperature": 70,
+    "minVoltage": 90
+  },
   "motors": {
-    "l_ankle_y": 680,
-    "r_ankle_y": 680
+    "l_ankle_y": {
+      "overloadThreshold": 680,
+      "maxTemperature": 68,
+      "minVoltage": 92
+    },
+    "r_ankle_y": {
+      "overloadThreshold": 680
+    }
   }
 }
 ```
 
 How it works:
 
-- Safety checks and monitor overload detection resolve threshold per motor first.
-- If a motor is not listed, `defaultThreshold` is used.
+- Safety checks and monitor detection resolve per-motor values first.
+- Guardrails covered: overload (`>=` threshold), thermal (`>=` max), voltage (`<=` min).
+- If a motor is not listed for a guardrail, defaults are used.
 - If the JSON is missing/invalid, code falls back to built-in defaults.
 
 Tuning guidance for standing development:

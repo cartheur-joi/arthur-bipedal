@@ -31,6 +31,8 @@ public sealed class AnimationTrainingWindow : Window
     bool _safetyPollInProgress;
     int _lastSafetyErrorCount = -1;
     int _lastSafetyOverloadCount = -1;
+    int _lastSafetyThermalCount = -1;
+    int _lastSafetyVoltageCount = -1;
 
     public AnimationTrainingWindow(RobotControlService robot) : base("Animation Training")
     {
@@ -290,21 +292,30 @@ public sealed class AnimationTrainingWindow : Window
                 IReadOnlyList<MotorMonitorReading> snapshot = _robot.ReadMotorMonitoringSnapshot(900);
                 int errors = snapshot.Count(r => !r.CommunicationOk);
                 int overloads = snapshot.Count(r => r.Overload);
+                int thermal = snapshot.Count(r => r.ThermalViolation);
+                int voltage = snapshot.Count(r => r.VoltageViolation);
 
                 Application.Invoke(delegate
                 {
-                    _safetyStatusLabel.Text = $"Safety: errors={errors}, overloads={overloads}";
-                    if (errors != _lastSafetyErrorCount || overloads != _lastSafetyOverloadCount)
+                    _safetyStatusLabel.Text =
+                        $"Safety: errors={errors}, overloads={overloads}, thermal={thermal}, voltage={voltage}";
+                    if (errors != _lastSafetyErrorCount ||
+                        overloads != _lastSafetyOverloadCount ||
+                        thermal != _lastSafetyThermalCount ||
+                        voltage != _lastSafetyVoltageCount)
                     {
-                        AppendLog($"Safety update: errors={errors}, overloads={overloads}");
+                        AppendLog(
+                            $"Safety update: errors={errors}, overloads={overloads}, thermal={thermal}, voltage={voltage}");
                     }
-                    if (overloads > 0)
+                    if (overloads > 0 || thermal > 0 || voltage > 0)
                     {
-                        _statusLabel.Text = "Safety: OVERLOAD";
+                        _statusLabel.Text = "Safety: ALERT";
                         BeepSignal();
                     }
                     _lastSafetyErrorCount = errors;
                     _lastSafetyOverloadCount = overloads;
+                    _lastSafetyThermalCount = thermal;
+                    _lastSafetyVoltageCount = voltage;
                 });
             }
             catch (Exception ex)

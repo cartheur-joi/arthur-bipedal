@@ -6,9 +6,9 @@
 - Start monitor, run safe sweeps for ankles/knees/hips, and tune `motor-overload-thresholds.json`.
 - Goal: no false trips at stable stance, immediate trips near hard-stop/load risk.
 
-2. Add Thermal and Voltage Guardrails
-- Extend the safety policy format with per-motor temperature and voltage bounds.
-- Block motion preemptively when thermal/voltage limits are violated.
+2. Tune Thermal and Voltage Guardrails
+- Thermal/voltage guardrails are now enforced in policy + SafetyGate.
+- Run standing sessions and tune per-motor `maxTemperature` and `minVoltage` values to reduce false positives.
 
 3. Add Safety Replay Report Command
 - Parse `logs/safety-events.log` and summarize most frequent tripping motors/actions.

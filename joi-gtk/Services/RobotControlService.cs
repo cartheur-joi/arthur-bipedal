@@ -16,8 +16,12 @@ public sealed class RobotControlService
     readonly object _initializeGate = new();
     readonly object _busIoGate = new();
     readonly Dictionary<string, int> _motorOverloadThresholds = new(StringComparer.Ordinal);
+    readonly Dictionary<string, int> _motorMaxTemperatures = new(StringComparer.Ordinal);
+    readonly Dictionary<string, int> _motorMinVoltages = new(StringComparer.Ordinal);
     readonly string _safetyEventLogPath;
     int _safetyOverloadThreshold = MotorFunctions.PresentLoadAlarm;
+    int _safetyMaxTemperature = 70;
+    int _safetyMinVoltage = 90;
     bool _initialized;
     public event Action<SafetyGateTrip> SafetyGateTripped;
 
@@ -26,7 +30,7 @@ public sealed class RobotControlService
         _motorControl = new MotorFunctions();
         _imuProvider = BuildImuProvider();
         _walkController = new WalkController(_motorControl, _imuProvider);
-        LoadMotorOverloadThresholdPolicy();
+        LoadMotorSafetyThresholdPolicy();
         _safetyEventLogPath = ResolveSafetyEventLogPath();
     }
 
@@ -242,12 +246,18 @@ public sealed class RobotControlService
                 {
                     ushort rawLoad = _motorControl.GetPresentLoad(motorName);
                     ushort normalizedLoad = NormalizeLoad(rawLoad);
+                    ushort temperature = _motorControl.GetPresentTemperture(motorName);
+                    ushort voltage = _motorControl.GetPresentVoltage(motorName);
                     bool torqueOn = ReadTorqueStatus(port, id);
                     int txRxResult = Dynamixel.getLastTxRxResult(port, MotorFunctions.ProtocolVersion);
                     byte packetError = Dynamixel.getLastRxPacketError(port, MotorFunctions.ProtocolVersion);
                     bool communicationOk = txRxResult == MotorFunctions.ComSuccess && packetError == 0;
-                    int effectiveThreshold = ResolveOverloadThreshold(motorName, overloadThreshold);
-                    bool overload = communicationOk && torqueOn && normalizedLoad >= effectiveThreshold;
+                    int effectiveOverloadThreshold = ResolveOverloadThreshold(motorName, overloadThreshold);
+                    int effectiveMaxTemperature = ResolveMaxTemperature(motorName);
+                    int effectiveMinVoltage = ResolveMinVoltage(motorName);
+                    bool overload = communicationOk && torqueOn && normalizedLoad >= effectiveOverloadThreshold;
+                    bool thermalViolation = communicationOk && torqueOn && temperature >= effectiveMaxTemperature;
+                    bool voltageViolation = communicationOk && torqueOn && voltage <= effectiveMinVoltage;
 
                     snapshot.Add(new MotorMonitorReading(
                         motorName,
@@ -255,9 +265,16 @@ public sealed class RobotControlService
                         location,
                         torqueOn,
                         normalizedLoad,
+                        temperature,
+                        voltage,
                         overload,
+                        thermalViolation,
+                        voltageViolation,
                         communicationOk,
-                        communicationOk ? string.Empty : BuildTxRxDetail(txRxResult, packetError)));
+                        communicationOk ? string.Empty : BuildTxRxDetail(txRxResult, packetError),
+                        effectiveOverloadThreshold,
+                        effectiveMaxTemperature,
+                        effectiveMinVoltage));
                 }
                 catch (Exception ex)
                 {
@@ -267,9 +284,16 @@ public sealed class RobotControlService
                         location,
                         false,
                         0,
+                        0,
+                        0,
                         false,
                         false,
-                        ex.Message));
+                        false,
+                        false,
+                        ex.Message,
+                        ResolveOverloadThreshold(motorName, overloadThreshold),
+                        ResolveMaxTemperature(motorName),
+                        ResolveMinVoltage(motorName)));
                 }
             }
 
@@ -309,37 +333,82 @@ public sealed class RobotControlService
         return fallbackThreshold;
     }
 
-    void LoadMotorOverloadThresholdPolicy()
+    int ResolveMaxTemperature(string motorName)
+    {
+        if (_motorMaxTemperatures.TryGetValue(motorName, out int maxTemperature) && maxTemperature > 0)
+            return maxTemperature;
+        return _safetyMaxTemperature;
+    }
+
+    int ResolveMinVoltage(string motorName)
+    {
+        if (_motorMinVoltages.TryGetValue(motorName, out int minVoltage) && minVoltage > 0)
+            return minVoltage;
+        return _safetyMinVoltage;
+    }
+
+    void LoadMotorSafetyThresholdPolicy()
     {
         EnsureMaps();
         _motorOverloadThresholds.Clear();
+        _motorMaxTemperatures.Clear();
+        _motorMinVoltages.Clear();
 
-        string policyPath = ResolveThresholdPolicyPath();
+        string policyPath = ResolveSafetyPolicyPath();
         if (string.IsNullOrWhiteSpace(policyPath) || !File.Exists(policyPath))
             return;
 
         try
         {
             string json = File.ReadAllText(policyPath);
-            MotorOverloadThresholdPolicy policy = JsonSerializer.Deserialize<MotorOverloadThresholdPolicy>(
-                json,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (policy == null)
+            using JsonDocument document = JsonDocument.Parse(json);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
                 return;
 
-            if (policy.DefaultThreshold > 0)
-                _safetyOverloadThreshold = policy.DefaultThreshold;
+            if (TryReadPositiveInt(root, out int defaultThreshold, "defaultThreshold"))
+                _safetyOverloadThreshold = defaultThreshold;
+            if (TryReadPositiveInt(root, out int defaultMaxTemperature, "defaultMaxTemperature"))
+                _safetyMaxTemperature = defaultMaxTemperature;
+            if (TryReadPositiveInt(root, out int defaultMinVoltage, "defaultMinVoltage"))
+                _safetyMinVoltage = defaultMinVoltage;
 
-            if (policy.Motors == null || policy.Motors.Count == 0)
-                return;
-
-            foreach ((string motorName, int threshold) in policy.Motors)
+            if (root.TryGetProperty("defaults", out JsonElement defaults) && defaults.ValueKind == JsonValueKind.Object)
             {
-                if (threshold <= 0)
-                    continue;
+                if (TryReadPositiveInt(defaults, out int nestedThreshold, "overloadThreshold", "defaultThreshold"))
+                    _safetyOverloadThreshold = nestedThreshold;
+                if (TryReadPositiveInt(defaults, out int nestedMaxTemperature, "maxTemperature", "defaultMaxTemperature"))
+                    _safetyMaxTemperature = nestedMaxTemperature;
+                if (TryReadPositiveInt(defaults, out int nestedMinVoltage, "minVoltage", "defaultMinVoltage"))
+                    _safetyMinVoltage = nestedMinVoltage;
+            }
+
+            if (!root.TryGetProperty("motors", out JsonElement motors) || motors.ValueKind != JsonValueKind.Object)
+                return;
+
+            foreach (JsonProperty motorPolicy in motors.EnumerateObject())
+            {
+                string motorName = motorPolicy.Name;
                 if (Motor.MotorContext == null || !Motor.MotorContext.ContainsKey(motorName))
                     continue;
-                _motorOverloadThresholds[motorName] = threshold;
+
+                JsonElement value = motorPolicy.Value;
+                if (value.ValueKind == JsonValueKind.Number)
+                {
+                    if (value.TryGetInt32(out int threshold) && threshold > 0)
+                        _motorOverloadThresholds[motorName] = threshold;
+                    continue;
+                }
+
+                if (value.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                if (TryReadPositiveInt(value, out int overloadThreshold, "overloadThreshold", "threshold"))
+                    _motorOverloadThresholds[motorName] = overloadThreshold;
+                if (TryReadPositiveInt(value, out int maxTemperature, "maxTemperature"))
+                    _motorMaxTemperatures[motorName] = maxTemperature;
+                if (TryReadPositiveInt(value, out int minVoltage, "minVoltage"))
+                    _motorMinVoltages[motorName] = minVoltage;
             }
         }
         catch
@@ -348,7 +417,25 @@ public sealed class RobotControlService
         }
     }
 
-    static string ResolveThresholdPolicyPath()
+    static bool TryReadPositiveInt(JsonElement source, out int value, params string[] propertyNames)
+    {
+        value = 0;
+        foreach (string propertyName in propertyNames)
+        {
+            if (!source.TryGetProperty(propertyName, out JsonElement candidate))
+                continue;
+
+            if (!candidate.TryGetInt32(out int parsed) || parsed <= 0)
+                continue;
+
+            value = parsed;
+            return true;
+        }
+
+        return false;
+    }
+
+    static string ResolveSafetyPolicyPath()
     {
         string runtimeCopy = Path.Combine(AppContext.BaseDirectory, "config", "motor-overload-thresholds.json");
         if (File.Exists(runtimeCopy))
@@ -460,16 +547,28 @@ public sealed class RobotControlService
         MotorMonitorReading[] overloads = scopedSnapshot
             .Where(reading => reading.Overload)
             .ToArray();
+        MotorMonitorReading[] thermalViolations = scopedSnapshot
+            .Where(reading => reading.ThermalViolation)
+            .ToArray();
+        MotorMonitorReading[] voltageViolations = scopedSnapshot
+            .Where(reading => reading.VoltageViolation)
+            .ToArray();
         MotorMonitorReading[] torqueOff = scopedSnapshot
             .Where(reading => !reading.TorqueOn)
             .ToArray();
 
-        if (communicationErrors.Length == 0 && overloads.Length == 0 && torqueOff.Length == 0)
+        if (communicationErrors.Length == 0 &&
+            overloads.Length == 0 &&
+            thermalViolations.Length == 0 &&
+            voltageViolations.Length == 0 &&
+            torqueOff.Length == 0)
             return;
 
         string detail =
             $"Comm={FormatSafetyRows(communicationErrors, row => $"{row.MotorName}:{row.Error}")}; " +
-            $"Overload={FormatSafetyRows(overloads, row => $"{row.MotorName}:{row.Load}")}; " +
+            $"Overload={FormatSafetyRows(overloads, row => $"{row.MotorName}:{row.Load}>={row.OverloadThreshold}")}; " +
+            $"Thermal={FormatSafetyRows(thermalViolations, row => $"{row.MotorName}:{row.Temperature}>={row.MaxTemperature}")}; " +
+            $"Voltage={FormatSafetyRows(voltageViolations, row => $"{row.MotorName}:{row.Voltage}<={row.MinVoltage}")}; " +
             $"TorqueOff={FormatSafetyRows(torqueOff, row => row.MotorName)}.";
 
         string failSafeResult = ApplyFailSafeTorqueOff(scopedMotors);
@@ -659,12 +758,6 @@ public sealed class RobotControlService
     }
 }
 
-sealed class MotorOverloadThresholdPolicy
-{
-    public int DefaultThreshold { get; set; }
-    public Dictionary<string, int> Motors { get; set; } = new(StringComparer.Ordinal);
-}
-
 public sealed class SafetyGateTrip
 {
     public SafetyGateTrip(string actionName, string phase, IReadOnlyList<string> scope, string detail)
@@ -689,18 +782,32 @@ public sealed class MotorMonitorReading
         string location,
         bool torqueOn,
         ushort load,
+        ushort temperature,
+        ushort voltage,
         bool overload,
+        bool thermalViolation,
+        bool voltageViolation,
         bool communicationOk,
-        string error)
+        string error,
+        int overloadThreshold,
+        int maxTemperature,
+        int minVoltage)
     {
         MotorName = motorName;
         ID = id;
         Location = location;
         TorqueOn = torqueOn;
         Load = load;
+        Temperature = temperature;
+        Voltage = voltage;
         Overload = overload;
+        ThermalViolation = thermalViolation;
+        VoltageViolation = voltageViolation;
         CommunicationOk = communicationOk;
         Error = error;
+        OverloadThreshold = overloadThreshold;
+        MaxTemperature = maxTemperature;
+        MinVoltage = minVoltage;
     }
 
     public string MotorName { get; }
@@ -708,7 +815,14 @@ public sealed class MotorMonitorReading
     public string Location { get; }
     public bool TorqueOn { get; }
     public ushort Load { get; }
+    public ushort Temperature { get; }
+    public ushort Voltage { get; }
     public bool Overload { get; }
+    public bool ThermalViolation { get; }
+    public bool VoltageViolation { get; }
     public bool CommunicationOk { get; }
     public string Error { get; }
+    public int OverloadThreshold { get; }
+    public int MaxTemperature { get; }
+    public int MinVoltage { get; }
 }
