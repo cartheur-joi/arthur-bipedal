@@ -228,6 +228,21 @@ Storage format (`db/positions.db`) uses normalized tables:
 
 This represents one pose as one snapshot row plus many per-motor rows.
 
+Daily baseline rule (enforced):
+
+- The robot must have a same-day `Stable Sitting Position` snapshot before training routines run.
+- If baseline is missing or from a previous day, training actions fail with an operator-visible message.
+- Routines currently gated:
+  - `--seated-handshake-test`
+  - supervised walk actions
+  - any animation training begin/replay path (service-enforced)
+
+Recommended start-of-day flow:
+
+1. Place robot in normal seated baseline posture.
+2. Run `dotnet run --project joi-gtk/joi-gtk.csproj -- --capture-stable-sitting`.
+3. Start training routines.
+
 ## Solution Structure
 
 - `joi-animations/`: WinForms UI application (`Cartheur.Animation.Joi`)

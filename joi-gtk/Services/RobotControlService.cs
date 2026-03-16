@@ -11,6 +11,7 @@ namespace joi_gtk.Services;
 
 public sealed class RobotControlService
 {
+    const string StableSittingPoseName = "Stable Sitting Position";
     readonly MotorFunctions _motorControl;
     readonly WalkController _walkController;
     readonly IImuProvider _imuProvider;
@@ -28,6 +29,7 @@ public sealed class RobotControlService
     int _safetyMinVoltage = 90;
     bool _initialized;
     bool _stableSittingPositionCaptured;
+    DateTime? _stableSittingCaptureDateLocal;
     public event Action<SafetyGateTrip> SafetyGateTripped;
 
     public RobotControlService()
@@ -72,6 +74,7 @@ public sealed class RobotControlService
 
     public bool IsInitialized => _initialized;
     public bool StableSittingPositionCaptured => _stableSittingPositionCaptured;
+    public bool HasDailyStableSittingBaseline => IsStableSittingBaselineCurrent();
     public int SafetyOverloadThreshold
     {
         get => _safetyOverloadThreshold;
@@ -120,7 +123,6 @@ public sealed class RobotControlService
 
     public string CaptureStableSittingPosition()
     {
-        const string positionTag = "Stable Sitting Position";
         return ExecuteOnBus("CaptureStableSittingPosition", () =>
         {
             EnsureMaps();
@@ -128,11 +130,81 @@ public sealed class RobotControlService
             if (snapshot == null || snapshot.Count == 0)
                 throw new InvalidOperationException("No present motor positions were available to capture.");
 
-            PersistStableSittingPosition(snapshot, positionTag);
+            DateTimeOffset capturedAtUtc = DateTimeOffset.UtcNow;
+            PersistStableSittingPosition(snapshot, StableSittingPoseName, capturedAtUtc);
 
             _stableSittingPositionCaptured = true;
-            return $"Captured {snapshot.Count} motors and stored as '{positionTag}' (flag=true).";
+            _stableSittingCaptureDateLocal = capturedAtUtc.LocalDateTime.Date;
+            return $"Captured {snapshot.Count} motors and stored as '{StableSittingPoseName}' (flag=true).";
         });
+    }
+
+    public string RequireDailyStableSittingBaseline(string trainingAction)
+    {
+        if (string.IsNullOrWhiteSpace(trainingAction))
+            trainingAction = "training action";
+
+        if (!TryResolveLatestStableSittingSnapshot(out DateTimeOffset capturedAtUtc, out int motorCount, out string message))
+            throw new InvalidOperationException(
+                $"Daily baseline required before {trainingAction}: {message} " +
+                "Run --capture-stable-sitting first.");
+
+        if (motorCount <= 0)
+            throw new InvalidOperationException(
+                $"Daily baseline required before {trainingAction}: stored snapshot is empty. " +
+                "Run --capture-stable-sitting again.");
+
+        DateTime todayLocal = DateTime.Now.Date;
+        DateTime capturedLocalDate = capturedAtUtc.LocalDateTime.Date;
+        if (capturedLocalDate != todayLocal)
+            throw new InvalidOperationException(
+                $"Daily baseline required before {trainingAction}: latest baseline date is {capturedLocalDate:yyyy-MM-dd}, " +
+                $"today is {todayLocal:yyyy-MM-dd}. Run --capture-stable-sitting.");
+
+        _stableSittingPositionCaptured = true;
+        _stableSittingCaptureDateLocal = capturedLocalDate;
+        return $"Daily stable sitting baseline OK ({capturedAtUtc:O}, motors={motorCount}).";
+    }
+
+    public string EnforceStableSittingPosition(
+        int durationMilliseconds = 900,
+        int interpolationSteps = 8,
+        int positionTolerance = 8)
+    {
+        if (durationMilliseconds < 200)
+            throw new ArgumentOutOfRangeException(nameof(durationMilliseconds), "Duration must be >= 200 ms.");
+        if (interpolationSteps < 3)
+            throw new ArgumentOutOfRangeException(nameof(interpolationSteps), "Interpolation steps must be >= 3.");
+        if (positionTolerance < 0 || positionTolerance > 100)
+            throw new ArgumentOutOfRangeException(nameof(positionTolerance), "Position tolerance must be between 0 and 100.");
+
+        RequireDailyStableSittingBaseline("stable sitting enforcement");
+        if (!TryLoadLatestStableSittingPose(out Dictionary<string, int> baselinePose, out DateTimeOffset capturedAtUtc, out string error))
+            throw new InvalidOperationException($"Unable to enforce stable sitting position: {error}");
+
+        string[] motors = baselinePose.Keys.OrderBy(name => name, StringComparer.Ordinal).ToArray();
+        Dictionary<string, int> currentPose = ReadPositions(motors);
+        Dictionary<string, int> displacedTargets = new(StringComparer.Ordinal);
+
+        foreach (string motor in motors)
+        {
+            int current = currentPose.TryGetValue(motor, out int value) ? value : 0;
+            int target = baselinePose[motor];
+            if (Math.Abs(current - target) > positionTolerance)
+                displacedTargets[motor] = target;
+        }
+
+        if (displacedTargets.Count == 0)
+            return $"Stable sitting already within tolerance ({positionTolerance}) for all {motors.Length} motors.";
+
+        SetTorqueOn(displacedTargets.Keys.ToArray());
+        MoveToPositions(displacedTargets, durationMilliseconds, interpolationSteps);
+        Dictionary<string, int> verification = ReadPositions(displacedTargets.Keys.ToArray());
+        int remainingOffTarget = verification.Count(kv => Math.Abs(kv.Value - displacedTargets[kv.Key]) > positionTolerance);
+
+        return
+            $"Enforced stable sitting from baseline {capturedAtUtc:O}: corrected={displacedTargets.Count}, " +
+            $"remaining_outside_tolerance={remainingOffTarget}, tolerance={positionTolerance}.";
     }
 
     public Dictionary<string, int> ReadPositions(string[] motors)
@@ -184,6 +256,7 @@ public sealed class RobotControlService
 
     public string ExecuteWalkCycleSupervised(int cycles, int stepDurationMs, int interpolationSteps, int timeoutMs, bool requireSupportFootContact)
     {
+        RequireDailyStableSittingBaseline("ExecuteSupervisedWalk");
         IEnumerable<string> lowerBodyMotors = Limbic.LeftLeg.Concat(Limbic.RightLeg);
         return ExecuteMotionWithSafety("ExecuteSupervisedWalk", lowerBodyMotors, () =>
         {
@@ -250,6 +323,7 @@ public sealed class RobotControlService
 
     public string ExecuteSeatedHandshakeSafetyTest(int shakes = 3, int stepDurationMs = 450, int interpolationSteps = 8)
     {
+        string baselineResult = EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 10);
         if (shakes < 1 || shakes > 8)
             throw new ArgumentOutOfRangeException(nameof(shakes), "Handshake shake count must be between 1 and 8.");
         if (stepDurationMs < 220)
@@ -317,7 +391,7 @@ public sealed class RobotControlService
                         _motorControl.MoveMotorSequenceSmooth(origin, stepDurationMs, interpolationSteps);
                     }
 
-                    return $"Seated handshake completed with {shakes} shake cycles (shoulder+forearm+elbow) and origin return.";
+                    return $"{baselineResult} Seated handshake completed with {shakes} shake cycles (shoulder+forearm+elbow) and origin return.";
                 });
             }
             finally
@@ -854,7 +928,130 @@ public sealed class RobotControlService
         }
     }
 
-    void PersistStableSittingPosition(IReadOnlyDictionary<string, int> snapshot, string positionTag)
+    bool IsStableSittingBaselineCurrent()
+    {
+        if (_stableSittingPositionCaptured && _stableSittingCaptureDateLocal.HasValue && _stableSittingCaptureDateLocal.Value == DateTime.Now.Date)
+            return true;
+
+        return TryResolveLatestStableSittingSnapshot(out DateTimeOffset capturedAtUtc, out _, out _) &&
+               capturedAtUtc.LocalDateTime.Date == DateTime.Now.Date;
+    }
+
+    bool TryResolveLatestStableSittingSnapshot(out DateTimeOffset capturedAtUtc, out int motorCount, out string message)
+    {
+        capturedAtUtc = default;
+        motorCount = 0;
+        message = "No baseline snapshot found.";
+
+        try
+        {
+            using SqliteConnection connection = new($"Data Source={_stableSittingPositionPath}");
+            connection.Open();
+
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT captured_at_utc, motor_count " +
+                "FROM pose_snapshot WHERE pose_name = $poseName " +
+                "ORDER BY id DESC LIMIT 1;";
+            command.Parameters.AddWithValue("$poseName", StableSittingPoseName);
+
+            using SqliteDataReader reader = command.ExecuteReader();
+            if (!reader.Read())
+            {
+                message = $"No '{StableSittingPoseName}' snapshot is stored.";
+                return false;
+            }
+
+            string capturedRaw = reader.IsDBNull(0) ? string.Empty : reader.GetString(0);
+            motorCount = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
+            if (string.IsNullOrWhiteSpace(capturedRaw) ||
+                !DateTimeOffset.TryParse(capturedRaw, out capturedAtUtc))
+            {
+                message = "Stored baseline timestamp is invalid.";
+                return false;
+            }
+
+            if (motorCount <= 0)
+            {
+                message = "Stored baseline has no motor values.";
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            message = $"Baseline lookup failed: {ex.Message}";
+            return false;
+        }
+    }
+
+    bool TryLoadLatestStableSittingPose(
+        out Dictionary<string, int> pose,
+        out DateTimeOffset capturedAtUtc,
+        out string message)
+    {
+        pose = new Dictionary<string, int>(StringComparer.Ordinal);
+        capturedAtUtc = default;
+        message = "No stable sitting pose found.";
+
+        try
+        {
+            using SqliteConnection connection = new($"Data Source={_stableSittingPositionPath}");
+            connection.Open();
+
+            long snapshotId;
+            using (SqliteCommand snapshot = connection.CreateCommand())
+            {
+                snapshot.CommandText =
+                    "SELECT id, captured_at_utc FROM pose_snapshot " +
+                    "WHERE pose_name = $poseName ORDER BY id DESC LIMIT 1;";
+                snapshot.Parameters.AddWithValue("$poseName", StableSittingPoseName);
+                using SqliteDataReader reader = snapshot.ExecuteReader();
+                if (!reader.Read())
+                {
+                    message = $"No '{StableSittingPoseName}' snapshot is stored.";
+                    return false;
+                }
+
+                snapshotId = reader.GetInt64(0);
+                string capturedRaw = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+                if (string.IsNullOrWhiteSpace(capturedRaw) || !DateTimeOffset.TryParse(capturedRaw, out capturedAtUtc))
+                {
+                    message = "Stored snapshot timestamp is invalid.";
+                    return false;
+                }
+            }
+
+            using SqliteCommand values = connection.CreateCommand();
+            values.CommandText =
+                "SELECT motor_name, position_value FROM pose_snapshot_value " +
+                "WHERE snapshot_id = $snapshotId ORDER BY motor_name;";
+            values.Parameters.AddWithValue("$snapshotId", snapshotId);
+            using SqliteDataReader valuesReader = values.ExecuteReader();
+            while (valuesReader.Read())
+            {
+                string motorName = valuesReader.GetString(0);
+                int positionValue = valuesReader.GetInt32(1);
+                pose[motorName] = positionValue;
+            }
+
+            if (pose.Count == 0)
+            {
+                message = "Stored snapshot has no motor rows.";
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            message = $"Pose load failed: {ex.Message}";
+            return false;
+        }
+    }
+
+    void PersistStableSittingPosition(IReadOnlyDictionary<string, int> snapshot, string positionTag, DateTimeOffset capturedAtUtc)
     {
         if (snapshot == null || snapshot.Count == 0)
             throw new InvalidOperationException("Cannot store empty stable sitting snapshot.");
@@ -864,7 +1061,7 @@ public sealed class RobotControlService
 
         using SqliteTransaction tx = connection.BeginTransaction();
         EnsurePoseSnapshotSchema(connection, tx);
-        long snapshotId = InsertPoseSnapshot(connection, tx, positionTag, snapshot.Count);
+        long snapshotId = InsertPoseSnapshot(connection, tx, positionTag, snapshot.Count, capturedAtUtc);
         foreach ((string motorName, int positionValue) in snapshot.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
             using SqliteCommand insert = connection.CreateCommand();
@@ -908,7 +1105,8 @@ public sealed class RobotControlService
         SqliteConnection connection,
         SqliteTransaction tx,
         string poseName,
-        int motorCount)
+        int motorCount,
+        DateTimeOffset capturedAtUtc)
     {
         using SqliteCommand command = connection.CreateCommand();
         command.Transaction = tx;
@@ -917,7 +1115,7 @@ public sealed class RobotControlService
             "VALUES ($poseName, $capturedAtUtc, $motorCount, $note); " +
             "SELECT last_insert_rowid();";
         command.Parameters.AddWithValue("$poseName", poseName);
-        command.Parameters.AddWithValue("$capturedAtUtc", DateTimeOffset.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$capturedAtUtc", capturedAtUtc.ToString("O"));
         command.Parameters.AddWithValue("$motorCount", motorCount);
         command.Parameters.AddWithValue("$note", "Captured from live motors via --capture-stable-sitting.");
         object id = command.ExecuteScalar();

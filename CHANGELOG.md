@@ -11,6 +11,8 @@ All notable changes to this project are documented in this file.
   - `pose_snapshot`
   - `pose_snapshot_value`
 - Capture migration now removes stale `StablePosition` table in runtime DB and writes one snapshot row plus many motor-value rows.
+- Enforced daily baseline gate for training routines:
+  - same-day `Stable Sitting Position` is now required before seated handshake, supervised walk, and animation training begin/replay.
 
 ### Changed (Docs Cleanup)
 - Updated README path references from `dynamixel/` to `cartheur-animals-robot/`.

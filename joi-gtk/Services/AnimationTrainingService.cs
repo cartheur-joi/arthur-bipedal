@@ -25,6 +25,7 @@ public sealed class AnimationTrainingService
 
     public Dictionary<string, int> BeginSession(string armSelection, string replayPhrase)
     {
+        _robot.EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 10);
         string normalizedPhrase = NormalizeReplayPhrase(replayPhrase);
         _activeMotors = ResolveArmMotors(armSelection);
         _activeTrainingType = BuildTrainingType(normalizedPhrase, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
@@ -63,6 +64,7 @@ public sealed class AnimationTrainingService
 
     public int ReplayLatest(string replayPhrase, int stepDurationMs = 700)
     {
+        _robot.EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 10);
         string normalizedPhrase = NormalizeReplayPhrase(replayPhrase);
         List<Dictionary<string, int>> frames = LoadLatestFrames(normalizedPhrase);
         if (frames.Count == 0)
