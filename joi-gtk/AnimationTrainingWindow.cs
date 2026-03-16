@@ -19,9 +19,10 @@ public sealed class AnimationTrainingWindow : Window
     readonly Entry _replayPhraseEntry = new() { Text = "seated_handshake" };
     readonly Entry _stepIntervalEntry = new() { Text = "1000", WidthChars = 7 };
     readonly Label _statusLabel = new("Idle");
-    readonly Label _voiceStatusLabel = new("Voice: off");
+    readonly Label _voiceStatusLabel = new("Voice: off (optional)");
     readonly Label _safetyStatusLabel = new("Safety: not started");
     readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true, WrapMode = WrapMode.WordChar };
+    readonly Button _startTrainingButton;
     readonly Button _pauseTrainingButton;
     uint _captureTimerId;
     uint _safetyTimerId;
@@ -29,6 +30,7 @@ public sealed class AnimationTrainingWindow : Window
     bool _hasActiveSession;
     bool _isPaused;
     bool _safetyPollInProgress;
+    bool _baselinePolicyInProgress;
     int _lastSafetyErrorCount = -1;
     int _lastSafetyOverloadCount = -1;
     int _lastSafetyThermalCount = -1;
@@ -68,34 +70,34 @@ public sealed class AnimationTrainingWindow : Window
             ColumnSpacing = 8,
             RowSpacing = 8
         };
-        config.Attach(new Label("Start phrase") { Xalign = 0 }, 0, 0, 1, 1);
-        config.Attach(new Label("Begin animation training") { Xalign = 0 }, 1, 0, 2, 1);
 
         _armSelection.AppendText("Left Arm");
         _armSelection.AppendText("Right Arm");
         _armSelection.Active = 1;
-        config.Attach(new Label("Arm") { Xalign = 0 }, 0, 1, 1, 1);
-        config.Attach(_armSelection, 1, 1, 1, 1);
+        config.Attach(new Label("Arm") { Xalign = 0 }, 0, 0, 1, 1);
+        config.Attach(_armSelection, 1, 0, 1, 1);
 
-        config.Attach(new Label("Replay phrase") { Xalign = 0 }, 0, 2, 1, 1);
-        config.Attach(_replayPhraseEntry, 1, 2, 2, 1);
-        config.Attach(new Label("Canonical AT-001 phrase: seated_handshake") { Xalign = 0 }, 0, 4, 3, 1);
+        config.Attach(new Label("Replay phrase") { Xalign = 0 }, 0, 1, 1, 1);
+        config.Attach(_replayPhraseEntry, 1, 1, 2, 1);
+        config.Attach(new Label("Canonical AT-001 phrase: seated_handshake") { Xalign = 0 }, 0, 3, 3, 1);
 
-        config.Attach(new Label("Capture ms") { Xalign = 0 }, 0, 3, 1, 1);
-        config.Attach(_stepIntervalEntry, 1, 3, 1, 1);
-        config.Attach(_statusLabel, 2, 3, 1, 1);
-        config.Attach(_voiceStatusLabel, 2, 2, 1, 1);
-        config.Attach(_safetyStatusLabel, 1, 5, 2, 1);
+        config.Attach(new Label("Capture ms") { Xalign = 0 }, 0, 2, 1, 1);
+        config.Attach(_stepIntervalEntry, 1, 2, 1, 1);
+        config.Attach(_statusLabel, 2, 2, 1, 1);
+        config.Attach(_voiceStatusLabel, 2, 1, 1, 1);
+        config.Attach(_safetyStatusLabel, 1, 4, 2, 1);
         root.PackStart(config, false, false, 0);
 
         Box actionRow = new(Orientation.Horizontal, 8);
-        actionRow.PackStart(CreateButton("Begin Animation Training", (_, _) => BeginTraining()), false, false, 0);
+        _startTrainingButton = CreateButton("Start Training", (_, _) => BeginTraining());
+        _startTrainingButton.Sensitive = false;
+        actionRow.PackStart(_startTrainingButton, false, false, 0);
         _pauseTrainingButton = CreateButton("Pause Training", (_, _) => TogglePauseTraining());
         _pauseTrainingButton.Sensitive = false;
         actionRow.PackStart(_pauseTrainingButton, false, false, 0);
-        actionRow.PackStart(CreateButton("Stop && Save", (_, _) => StopAndSave()), false, false, 0);
+        actionRow.PackStart(CreateButton("Stop Training", (_, _) => StopAndSave()), false, false, 0);
         actionRow.PackStart(CreateButton("Replay Phrase", (_, _) => ReplayPhrase()), false, false, 0);
-        actionRow.PackStart(CreateButton("Voice ON", (_, _) => StartVoiceListener()), false, false, 0);
+        actionRow.PackStart(CreateButton("Voice ON (Optional)", (_, _) => StartVoiceListener()), false, false, 0);
         actionRow.PackStart(CreateButton("Voice OFF", (_, _) => StopVoiceListener()), false, false, 0);
         actionRow.PackStart(CreateButton("Close", (_, _) => Close()), false, false, 0);
         root.PackStart(actionRow, false, false, 0);
@@ -108,8 +110,7 @@ public sealed class AnimationTrainingWindow : Window
         logScroll.Add(_logView);
         root.PackStart(logScroll, true, true, 0);
 
-        AppendLog("Ready. Use 'Begin animation training' flow to capture arm poses.");
-        StartVoiceListener();
+        AppendLog("Ready. Use Start Training / Stop Training buttons. Voice is optional and disabled by default.");
         StartSafetyPolling();
     }
 
@@ -135,6 +136,7 @@ public sealed class AnimationTrainingWindow : Window
             _captureIntervalMs = intervalMs;
             _hasActiveSession = true;
             _isPaused = false;
+            _startTrainingButton.Sensitive = false;
             _pauseTrainingButton.Sensitive = true;
             _pauseTrainingButton.Label = "Pause Training";
             _statusLabel.Text = "Training: awaiting input";
@@ -154,7 +156,10 @@ public sealed class AnimationTrainingWindow : Window
     void EnsureInitializedInBackground()
     {
         if (_robot.IsInitialized)
+        {
+            CheckDailyBaselinePolicyAtOpen();
             return;
+        }
 
         _statusLabel.Text = "Initializing robot...";
         AppendLog("Initialization started in background for Animation Training.");
@@ -166,8 +171,8 @@ public sealed class AnimationTrainingWindow : Window
                 string result = _robot.Initialize();
                 Application.Invoke(delegate
                 {
-                    _statusLabel.Text = "Idle";
                     AppendLog(result);
+                    CheckDailyBaselinePolicyAtOpen();
                     PollSafetySnapshot();
                 });
             }
@@ -182,6 +187,52 @@ public sealed class AnimationTrainingWindow : Window
         });
     }
 
+    void CheckDailyBaselinePolicyAtOpen()
+    {
+        if (_baselinePolicyInProgress)
+            return;
+
+        _baselinePolicyInProgress = true;
+        _startTrainingButton.Sensitive = false;
+        _statusLabel.Text = "Baseline: checking...";
+        AppendLog("[Policy] Checking daily stable sitting baseline. Please wait...");
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                string baselineStatus = _robot.RequireDailyStableSittingBaseline("animation training window open");
+                Application.Invoke(delegate
+                {
+                    AppendLog($"[Policy] {baselineStatus}");
+                    _statusLabel.Text = "Baseline: aligning...";
+                    AppendLog("[Policy] Enforcing stable seated alignment. Please wait...");
+                });
+
+                string enforceResult = _robot.EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 15);
+                Application.Invoke(delegate
+                {
+                    _statusLabel.Text = "Baseline: aligned";
+                    _startTrainingButton.Sensitive = !_hasActiveSession;
+                    AppendLog($"[Policy] {enforceResult}");
+                });
+            }
+            catch (Exception ex)
+            {
+                Application.Invoke(delegate
+                {
+                    _statusLabel.Text = "Baseline: REQUIRED";
+                    _startTrainingButton.Sensitive = false;
+                    AppendLog($"[Policy] {ex.Message}");
+                });
+            }
+            finally
+            {
+                _baselinePolicyInProgress = false;
+            }
+        });
+    }
+
     void StopAndSave()
     {
         StopCaptureTimer();
@@ -190,6 +241,7 @@ public sealed class AnimationTrainingWindow : Window
             int frameCount = _training.StopAndSaveSession();
             _hasActiveSession = false;
             _isPaused = false;
+            _startTrainingButton.Sensitive = true;
             _pauseTrainingButton.Sensitive = false;
             _pauseTrainingButton.Label = "Pause Training";
             _statusLabel.Text = "Training: saved";
@@ -350,14 +402,24 @@ public sealed class AnimationTrainingWindow : Window
             string confidenceText = confidence >= 0 ? confidence.ToString("0.00") : "n/a";
             AppendLog($"Voice heard: \"{phrase}\" (p={confidenceText})");
 
-            if (ContainsCommandToken(normalized, "start") || normalized.Contains("begin animation training"))
+            if (IsExactCommand(normalized, "start"))
             {
+                if (_hasActiveSession)
+                {
+                    AppendLog("Voice START ignored: session already active.");
+                    return;
+                }
                 BeginTraining();
                 return;
             }
 
-            if (ContainsCommandToken(normalized, "stop") || normalized.Contains("stop animation training"))
+            if (IsExactCommand(normalized, "stop"))
             {
+                if (!_hasActiveSession)
+                {
+                    AppendLog("Voice STOP ignored: no active session.");
+                    return;
+                }
                 StopAndSave();
                 return;
             }
@@ -388,11 +450,8 @@ public sealed class AnimationTrainingWindow : Window
         });
     }
 
-    static bool ContainsCommandToken(string phrase, string token)
-    {
-        string[] parts = phrase.Split(new[] { ' ', '\t', '\r', '\n', '.', ',', ';', '!', '?', ':' }, StringSplitOptions.RemoveEmptyEntries);
-        return parts.Any(p => string.Equals(p, token, StringComparison.OrdinalIgnoreCase));
-    }
+    static bool IsExactCommand(string normalizedPhrase, string command)
+        => string.Equals(normalizedPhrase.Trim(), command, StringComparison.OrdinalIgnoreCase);
 
     bool TryGetCaptureInterval(out int intervalMs)
     {

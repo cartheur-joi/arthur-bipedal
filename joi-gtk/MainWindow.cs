@@ -111,7 +111,6 @@ public sealed class MainWindow : Window
         root.PackStart(consoleFrame, true, true, 0);
 
         SetLog(_log.ToString());
-        AppendLog($"[Icon] {GtkWindowIconService.LoadedIconPath}");
         AppendLog($"[Voice] {_narration.Status}");
     }
 

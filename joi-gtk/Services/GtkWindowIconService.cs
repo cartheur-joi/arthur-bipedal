@@ -24,7 +24,6 @@ public static class GtkWindowIconService
 
             Gtk.Window.DefaultIcon = _icon;
             _defaultApplied = true;
-            Console.WriteLine($"[Icon] Default icon loaded from: {_loadedPath}");
         }
         catch
         {
