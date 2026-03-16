@@ -160,6 +160,35 @@ A reusable labeled motor-body training sheet is available at:
 
 It overlays motor labels on `images/motors_on_robot.png` and includes a legend panel for training sessions and calibration notes.
 
+## Robot Voice Announcements (AeonVoice)
+
+`joi-gtk` now supports spoken intent/feedback announcements for user actions.
+
+Packages:
+
+- `AeonVoice`
+- `AeonVoice.Native`
+
+Runtime requirements:
+
+- `AEONVOICE_DATA_PATH` -> AeonVoice language data directory
+- `AEONVOICE_CONFIG_PATH` -> AeonVoice config directory
+- optional:
+  - `ARTHUR_AEONVOICE_VOICE` (default: `Leena`)
+  - `ARTHUR_SPEECH_ENABLED=0` to disable speech
+
+Behavior:
+
+- Before a major action, robot voice announces intent.
+- After action completion/failure, robot voice announces result.
+- Voice failures do not block safety/control flow.
+
+CLI check:
+
+- `dotnet run --project joi-gtk/joi-gtk.csproj -- --voice-test`
+- custom phrase:
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --voice-test \"I will move to seated calibration pose.\"`
+
 ## MPU6050 Serial Integration (GTK)
 
 `joi-gtk` now supports MPU telemetry from an external Arduino bridge over USB serial.

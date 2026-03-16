@@ -13,6 +13,12 @@ All notable changes to this project are documented in this file.
 - Added CLI command: `--body-calibrate` (strict) with optional `--non-strict`.
 - Added GTK main action button: `Body Calibrate`.
 
+### Added (Robot Voice)
+- Added `AeonVoice` + `AeonVoice.Native` package integration in `joi-gtk`.
+- Added `RobotNarrationService` for spoken action intent/result announcements.
+- Main GTK action flow now announces what the robot intends to do before executing user commands.
+- Added CLI diagnostic command: `--voice-test [text...]`.
+
 ### Added (Thermal + Voltage Guardrails)
 - Extended `joi-gtk/config/motor-overload-thresholds.json` to support safety defaults and per-motor guardrails for:
   - overload threshold,

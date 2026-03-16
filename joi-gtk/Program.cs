@@ -49,6 +49,14 @@ internal static class Program
             RunImuProbe();
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--voice-test", StringComparison.OrdinalIgnoreCase))
+        {
+            string text = args.Length > 1
+                ? string.Join(" ", args.Skip(1))
+                : "Arthur voice test complete.";
+            RunVoiceTest(text);
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--body-calibrate", StringComparison.OrdinalIgnoreCase))
         {
             bool strict = !args.Skip(1).Any(a => string.Equals(a, "--non-strict", StringComparison.OrdinalIgnoreCase));
@@ -334,6 +342,17 @@ internal static class Program
         RobotControlService service = new();
         Console.WriteLine(service.Initialize());
         Console.WriteLine(service.RunStartupBodyAwarenessCalibration(strict));
+    }
+
+    static void RunVoiceTest(string text)
+    {
+        using RobotNarrationService voice = new();
+        Console.WriteLine($"VOICE status={voice.Status}");
+        if (!voice.IsAvailable)
+            return;
+
+        voice.Announce(text);
+        Console.WriteLine("VOICE spoke test phrase.");
     }
 
     static int ParseTopCount(string[] args, int index, int fallback)

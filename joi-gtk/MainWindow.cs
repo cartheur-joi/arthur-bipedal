@@ -17,6 +17,7 @@ public sealed class MainWindow : Window
 {
     const string InitialLogMessage = "GTK# robot panel initialized.";
     readonly RobotControlService _robot = new();
+    readonly IRobotNarrationService _narration = new RobotNarrationService();
     readonly StringBuilder _log = new(InitialLogMessage);
     bool _clearedInitialLog;
 
@@ -71,6 +72,8 @@ public sealed class MainWindow : Window
             StopSweep();
             StopMonitoring();
             _robot.SafetyGateTripped -= OnSafetyGateTripped;
+            if (_narration is IDisposable disposableNarration)
+                disposableNarration.Dispose();
             Application.Quit();
         };
 
@@ -134,6 +137,7 @@ public sealed class MainWindow : Window
         root.PackStart(scroll, false, false, 0);
 
         SetLog(_log.ToString());
+        AppendLog($"[Voice] {_narration.Status}");
     }
 
     static Button CreateButton(string text, EventHandler onClick)
@@ -269,6 +273,7 @@ public sealed class MainWindow : Window
 
     void RunAction(string actionName, Func<string> action)
     {
+        AnnounceIntent(actionName);
         try
         {
             string result = action();
@@ -276,6 +281,7 @@ public sealed class MainWindow : Window
             string line = $"[{actionName}] {result}";
             AppendLog(line);
             WriteConsoleEntry(line);
+            AnnounceCompletion(actionName);
         }
         catch (Exception ex)
         {
@@ -283,7 +289,41 @@ public sealed class MainWindow : Window
             string line = $"[{actionName}] ERROR: {ex.Message}";
             AppendLog(line);
             WriteConsoleEntry(line);
+            AnnounceFailure(actionName);
         }
+    }
+
+    void AnnounceIntent(string actionName)
+    {
+        if (!_narration.IsAvailable)
+            return;
+
+        string phrase = actionName switch
+        {
+            "BodyCalibrate" => "I will calibrate body awareness now.",
+            "SeatedHandshake" => "I will perform a seated handshake safety test.",
+            "Initialize" => "I will initialize motor systems now.",
+            "EmergencyStop" => "I will apply emergency stop torque off.",
+            _ => $"I will execute {actionName}."
+        };
+
+        _ = Task.Run(() => _narration.Announce(phrase));
+    }
+
+    void AnnounceCompletion(string actionName)
+    {
+        if (!_narration.IsAvailable)
+            return;
+
+        _ = Task.Run(() => _narration.Announce($"{actionName} completed."));
+    }
+
+    void AnnounceFailure(string actionName)
+    {
+        if (!_narration.IsAvailable)
+            return;
+
+        _ = Task.Run(() => _narration.Announce($"{actionName} failed. Please check safety status."));
     }
 
     void AppendLog(string line)
