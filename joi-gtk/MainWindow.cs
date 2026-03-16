@@ -43,7 +43,8 @@ public sealed class MainWindow : Window
     readonly Dictionary<string, EventBox> _motorIndicators = new();
     readonly List<Widget> _motorLabelWidgets = new();
     readonly Dictionary<EventBox, CssProvider> _eventBoxCssProviders = new();
-    readonly Frame _monitoringFrame;
+    readonly Frame _monitoringFrame = new("Robot Monitoring");
+    Window _robotMonitoringWindow;
     AnimationTrainingWindow _animationTrainingWindow;
     CameraWindow _cameraWindow;
     uint _monitorTimerId;
@@ -59,6 +60,7 @@ public sealed class MainWindow : Window
 
     public MainWindow() : base("Arthur Bipedal Robot Control Panel")
     {
+        GtkWindowIconService.Apply(this);
         SetDefaultSize(1200, 700);
         BorderWidth = 12;
         _robot.SafetyGateTripped += OnSafetyGateTripped;
@@ -66,6 +68,7 @@ public sealed class MainWindow : Window
         {
             StopSweep();
             StopMonitoring();
+            _robotMonitoringWindow?.Destroy();
             _robot.SafetyGateTripped -= OnSafetyGateTripped;
             if (_narration is IDisposable disposableNarration)
                 disposableNarration.Dispose();
@@ -82,22 +85,7 @@ public sealed class MainWindow : Window
         title.Xalign = 0;
         root.PackStart(title, false, false, 0);
 
-        Box actionRow = new(Orientation.Horizontal, 8);
-        actionRow.PackStart(CreateButton("Initialize", (_, _) => RunAction("Initialize", () => _robot.Initialize())), false, false, 0);
-        actionRow.PackStart(CreateButton("Animation Training", (_, _) => OpenAnimationTrainingWindow()), false, false, 0);
-        actionRow.PackStart(CreateButton("Camera Feed", (_, _) => OpenCameraWindow()), false, false, 0);
-        actionRow.PackStart(CreateButton("View Robot Monitor", (_, _) => ShowRobotMonitor()), false, false, 0);
-        actionRow.PackStart(CreateButton("Torque ON (Lower)", (_, _) => RunAction("TorqueOnLower", () => _robot.TorqueOnLower())), false, false, 0);
-        actionRow.PackStart(CreateButton("Torque OFF (Lower)", (_, _) => RunAction("TorqueOffLower", () => _robot.TorqueOffLower())), false, false, 0);
-        actionRow.PackStart(CreateButton("Read Lower Telemetry", (_, _) => RunAction("ReadLowerTelemetry", () => _robot.ReadLowerTelemetry())), false, false, 0);
-        actionRow.PackStart(CreateButton("Body Calibrate", (_, _) => RunAction("BodyCalibrate", () => _robot.RunStartupBodyAwarenessCalibration(strict: true))), false, false, 0);
-        actionRow.PackStart(CreateButton("Read IMU", (_, _) => RunAction("ReadIMU", () => _robot.ReadImuTelemetry())), false, false, 0);
-        actionRow.PackStart(CreateButton("Balance Step", (_, _) => RunAction("BalanceStep", () => _robot.ApplyStandingBalanceCompensationStep())), false, false, 0);
-        actionRow.PackStart(CreateButton("Emergency Stop", (_, _) => RunAction("EmergencyStop", () => _robot.EmergencyStopLower())), false, false, 0);
-        actionRow.PackStart(CreateButton("Clear", (_, _) => ClearLogs()), false, false, 0);
-        actionRow.PackStart(new Label("Status:") { Xalign = 0 }, false, false, 10);
-        actionRow.PackStart(_statusLabel, false, false, 0);
-        root.PackStart(actionRow, false, false, 0);
+        root.PackStart(BuildControlPanel(), false, false, 0);
 
         Label policyLabel = new("Policy: Program poses and gait routines through Animation Training only.")
         {
@@ -105,15 +93,16 @@ public sealed class MainWindow : Window
         };
         root.PackStart(policyLabel, false, false, 0);
 
-        _monitoringFrame = BuildMonitoringPanel();
-        _monitoringFrame.Hide();
-        root.PackStart(_monitoringFrame, true, true, 0);
+        Box statusRow = new(Orientation.Horizontal, 8);
+        statusRow.PackStart(new Label("Status:") { Xalign = 0 }, false, false, 0);
+        statusRow.PackStart(_statusLabel, false, false, 0);
+        root.PackStart(statusRow, false, false, 0);
 
         ScrolledWindow scroll = new()
         {
             HscrollbarPolicy = PolicyType.Automatic,
             VscrollbarPolicy = PolicyType.Automatic,
-            HeightRequest = 110
+            HeightRequest = 140
         };
         scroll.Add(_logView);
         root.PackStart(scroll, false, false, 0);
@@ -127,6 +116,43 @@ public sealed class MainWindow : Window
         Button button = new(text);
         button.Clicked += onClick;
         return button;
+    }
+
+    Widget BuildControlPanel()
+    {
+        Box panel = new(Orientation.Vertical, 6);
+
+        Frame trainingFrame = new("Training & Views");
+        Box trainingRow = new(Orientation.Horizontal, 8);
+        trainingRow.BorderWidth = 6;
+        trainingRow.PackStart(CreateButton("Initialize", (_, _) => RunAction("Initialize", () => _robot.Initialize())), false, false, 0);
+        trainingRow.PackStart(CreateButton("Animation Training", (_, _) => OpenAnimationTrainingWindow()), false, false, 0);
+        trainingRow.PackStart(CreateButton("View Robot Monitor", (_, _) => ShowRobotMonitor()), false, false, 0);
+        trainingRow.PackStart(CreateButton("Camera Feed", (_, _) => OpenCameraWindow()), false, false, 0);
+        trainingFrame.Add(trainingRow);
+        panel.PackStart(trainingFrame, false, false, 0);
+
+        Frame diagnosticFrame = new("Diagnostics");
+        Box diagnosticRow = new(Orientation.Horizontal, 8);
+        diagnosticRow.BorderWidth = 6;
+        diagnosticRow.PackStart(CreateButton("Body Calibrate", (_, _) => RunAction("BodyCalibrate", () => _robot.RunStartupBodyAwarenessCalibration(strict: true))), false, false, 0);
+        diagnosticRow.PackStart(CreateButton("Read IMU", (_, _) => RunAction("ReadIMU", () => _robot.ReadImuTelemetry())), false, false, 0);
+        diagnosticRow.PackStart(CreateButton("Balance Step", (_, _) => RunAction("BalanceStep", () => _robot.ApplyStandingBalanceCompensationStep())), false, false, 0);
+        diagnosticRow.PackStart(CreateButton("Read Lower Telemetry", (_, _) => RunAction("ReadLowerTelemetry", () => _robot.ReadLowerTelemetry())), false, false, 0);
+        diagnosticFrame.Add(diagnosticRow);
+        panel.PackStart(diagnosticFrame, false, false, 0);
+
+        Frame safetyFrame = new("Safety");
+        Box safetyRow = new(Orientation.Horizontal, 8);
+        safetyRow.BorderWidth = 6;
+        safetyRow.PackStart(CreateButton("Torque ON (Lower)", (_, _) => RunAction("TorqueOnLower", () => _robot.TorqueOnLower())), false, false, 0);
+        safetyRow.PackStart(CreateButton("Torque OFF (Lower)", (_, _) => RunAction("TorqueOffLower", () => _robot.TorqueOffLower())), false, false, 0);
+        safetyRow.PackStart(CreateButton("Emergency Stop", (_, _) => RunAction("EmergencyStop", () => _robot.EmergencyStopLower())), false, false, 0);
+        safetyRow.PackStart(CreateButton("Clear Log", (_, _) => ClearLogs()), false, false, 0);
+        safetyFrame.Add(safetyRow);
+        panel.PackStart(safetyFrame, false, false, 0);
+
+        return panel;
     }
 
     MenuBar BuildMenuBar()
@@ -286,8 +312,29 @@ public sealed class MainWindow : Window
 
     void ShowRobotMonitor()
     {
-        if (!_monitoringFrame.Visible)
-            _monitoringFrame.ShowAll();
+        if (_monitoringFrame.Child == null)
+        {
+            _monitoringFrame.Add(BuildMonitoringPanelContent());
+        }
+
+        if (_robotMonitoringWindow == null)
+        {
+            _robotMonitoringWindow = new Window("Robot Monitoring")
+            {
+                TransientFor = this
+            };
+            GtkWindowIconService.Apply(_robotMonitoringWindow);
+            _robotMonitoringWindow.SetDefaultSize(1180, 760);
+            _robotMonitoringWindow.Add(_monitoringFrame);
+            _robotMonitoringWindow.DeleteEvent += (_, e) =>
+            {
+                _robotMonitoringWindow.Hide();
+                e.RetVal = true;
+            };
+        }
+
+        _robotMonitoringWindow.ShowAll();
+        _robotMonitoringWindow.Present();
 
         RunMonitoringSnapshot("ViewRobotMonitor", true);
     }
@@ -342,10 +389,8 @@ public sealed class MainWindow : Window
         }
     }
 
-    Frame BuildMonitoringPanel()
+    Box BuildMonitoringPanelContent()
     {
-        Frame frame = new("Robot Monitoring");
-
         Box container = new(Orientation.Vertical, 8);
         container.BorderWidth = 8;
 
@@ -392,8 +437,7 @@ public sealed class MainWindow : Window
         body.Pack2(tableScroll, true, false);
         container.PackStart(body, true, true, 0);
 
-        frame.Add(container);
-        return frame;
+        return container;
     }
 
     Frame BuildSafeSweepPanel()

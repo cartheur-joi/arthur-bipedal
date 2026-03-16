@@ -36,6 +36,7 @@ public sealed class AnimationTrainingWindow : Window
 
     public AnimationTrainingWindow(RobotControlService robot) : base("Animation Training")
     {
+        GtkWindowIconService.Apply(this);
         _robot = robot;
         _training = new AnimationTrainingService(robot);
         SetDefaultSize(900, 560);

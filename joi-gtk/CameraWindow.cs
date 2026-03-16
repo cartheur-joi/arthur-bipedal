@@ -1,4 +1,5 @@
 using Gtk;
+using joi_gtk.Services;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -26,6 +27,7 @@ public sealed class CameraWindow : Window
 
     public CameraWindow() : base("Robot Camera Feed")
     {
+        GtkWindowIconService.Apply(this);
         SetDefaultSize(900, 640);
         BorderWidth = 10;
         DeleteEvent += (_, e) =>
