@@ -35,4 +35,7 @@ Arthur-Bipedal
     1309: Doing enforcement of routines.
     1315: Animation training proper is next - The handshake.
     1331: Removing the old windoze forms as will create everything anew.
+    1334: Next start AT-001.
+    1435: Just fixed the pocketsphinx package to include everything. Will add this first.
+    1442: Speaking into the mic and having it repeat by Leena using my two packages is a success.
     
