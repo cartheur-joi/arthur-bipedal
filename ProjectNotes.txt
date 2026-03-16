@@ -26,4 +26,5 @@ Arthur-Bipedal
     915: Starting with a "handshake" test.
     925: Good but can find trouble fast. Working on an "internal visualization" of "its" body.
     943: A "startup calibration" algorithm is available to train the robot on its body geometry. Is a fully mental "agent" required?
+    945: "The current architecture is sufficient and appropriate for now. An agent is optional, and if added, should sit above guardrails, not replace them."
     
