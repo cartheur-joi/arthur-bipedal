@@ -410,7 +410,11 @@ internal static class Program
     {
         RobotControlService service = new();
         Console.WriteLine(service.Initialize());
-        Console.WriteLine(service.EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 15));
+        Console.WriteLine(service.EnforceStableSittingPosition(
+            durationMilliseconds: 1000,
+            interpolationSteps: 10,
+            positionTolerance: 25,
+            maxCorrectionPasses: 7));
     }
 
     static void RunBodyCalibration(bool strict)

@@ -209,7 +209,11 @@ public sealed class AnimationTrainingWindow : Window
                     AppendLog("[Policy] Enforcing stable seated alignment. Please wait...");
                 });
 
-                string enforceResult = _robot.EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 15);
+                string enforceResult = _robot.EnforceStableSittingPosition(
+                    durationMilliseconds: 1000,
+                    interpolationSteps: 10,
+                    positionTolerance: 25,
+                    maxCorrectionPasses: 7);
                 Application.Invoke(delegate
                 {
                     _statusLabel.Text = "Baseline: aligned";

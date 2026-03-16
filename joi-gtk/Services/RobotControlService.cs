@@ -209,9 +209,22 @@ public sealed class RobotControlService
 
         int remainingOffTarget = displacedTargets.Count;
         if (remainingOffTarget > 0)
+        {
+            string detail = string.Join(
+                ", ",
+                displacedTargets
+                    .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                    .Take(5)
+                    .Select(kv =>
+                    {
+                        int current = currentPose.TryGetValue(kv.Key, out int c) ? c : 0;
+                        int delta = current - kv.Value;
+                        return $"{kv.Key}:current={current},target={kv.Value},delta={delta}";
+                    }));
             throw new InvalidOperationException(
                 $"Stable sitting enforcement incomplete after {maxCorrectionPasses} pass(es): " +
-                $"remaining_outside_tolerance={remainingOffTarget}, tolerance={positionTolerance}.");
+                $"remaining_outside_tolerance={remainingOffTarget}, tolerance={positionTolerance}, sample=[{detail}].");
+        }
 
         return
             $"Enforced stable sitting from baseline {capturedAtUtc:O}: corrected={corrected.Count}, " +
