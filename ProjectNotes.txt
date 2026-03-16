@@ -34,4 +34,5 @@ Arthur-Bipedal
     1248: Created a new db routine and data-capture algorithm.
     1309: Doing enforcement of routines.
     1315: Animation training proper is next - The handshake.
+    1331: Removing the old windoze forms as will create everything anew.
     
