@@ -29,4 +29,5 @@ Arthur-Bipedal
     945: "The current architecture is sufficient and appropriate for now. An agent is optional, and if added, should sit above guardrails, not replace them."
     1004: Looking for the old seating pose for start-position stability. In the meantime checking AeonVoice package and what is needed.
     1112: Was able to do a full-lifecycle test for AeonVoice and got a handle on using a shared dev machine and behavior for repo-only instances.
+    1217: Decided to tackle the license type agreement in the package area that i didn't do last time.
     
