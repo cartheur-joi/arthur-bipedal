@@ -152,12 +152,14 @@ Rules:
 
 For chair-seated validation of arm-side safety gates, `joi-gtk` now includes a conservative right-arm handshake routine.
 
-- GTK button:
-  - `Handshake (Seated)` on the main action row.
 - CLI:
   - `dotnet run --project joi-gtk/joi-gtk.csproj -- --seated-handshake-test`
   - optional shake-count override:
     - `dotnet run --project joi-gtk/joi-gtk.csproj -- --seated-handshake-test 4`
+
+Note:
+- Main GTK no longer exposes a direct handshake button under the animation-training-only policy.
+- Use Animation Training flows for canonical handshake behavior; keep CLI handshake for diagnostics/migration only.
 
 Behavior:
 

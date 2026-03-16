@@ -22,11 +22,6 @@ public sealed class MainWindow : Window
     bool _clearedInitialLog;
 
     readonly Label _statusLabel = new("Ready");
-    readonly Entry _cyclesEntry = new() { Text = "1" };
-    readonly Entry _stepDurationEntry = new() { Text = "800" };
-    readonly Entry _interpolationEntry = new() { Text = "12" };
-    readonly Entry _timeoutEntry = new() { Text = "8000" };
-    readonly CheckButton _requireFootContact = new("Need foot-contact");
     readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true, WrapMode = WrapMode.WordChar };
     readonly Entry _overloadThresholdEntry = new() { Text = "900", WidthChars = 6 };
     readonly Label _monitorSummaryLabel = new("Monitoring stopped");
@@ -98,28 +93,17 @@ public sealed class MainWindow : Window
         actionRow.PackStart(CreateButton("Body Calibrate", (_, _) => RunAction("BodyCalibrate", () => _robot.RunStartupBodyAwarenessCalibration(strict: true))), false, false, 0);
         actionRow.PackStart(CreateButton("Read IMU", (_, _) => RunAction("ReadIMU", () => _robot.ReadImuTelemetry())), false, false, 0);
         actionRow.PackStart(CreateButton("Balance Step", (_, _) => RunAction("BalanceStep", () => _robot.ApplyStandingBalanceCompensationStep())), false, false, 0);
-        actionRow.PackStart(CreateButton("Handshake (Seated)", (_, _) => ExecuteSeatedHandshakeTest()), false, false, 0);
+        actionRow.PackStart(CreateButton("Emergency Stop", (_, _) => RunAction("EmergencyStop", () => _robot.EmergencyStopLower())), false, false, 0);
         actionRow.PackStart(CreateButton("Clear", (_, _) => ClearLogs()), false, false, 0);
         actionRow.PackStart(new Label("Status:") { Xalign = 0 }, false, false, 10);
         actionRow.PackStart(_statusLabel, false, false, 0);
         root.PackStart(actionRow, false, false, 0);
 
-        Grid walkRow = new()
+        Label policyLabel = new("Policy: Program poses and gait routines through Animation Training only.")
         {
-            ColumnSpacing = 8,
-            RowSpacing = 8
+            Xalign = 0
         };
-        walkRow.Attach(new Label("Cycles") { Xalign = 0 }, 0, 0, 1, 1);
-        walkRow.Attach(_cyclesEntry, 1, 0, 1, 1);
-        walkRow.Attach(new Label("Step ms") { Xalign = 0 }, 2, 0, 1, 1);
-        walkRow.Attach(_stepDurationEntry, 3, 0, 1, 1);
-        walkRow.Attach(new Label("Interp") { Xalign = 0 }, 4, 0, 1, 1);
-        walkRow.Attach(_interpolationEntry, 5, 0, 1, 1);
-        walkRow.Attach(new Label("Timeout ms") { Xalign = 0 }, 6, 0, 1, 1);
-        walkRow.Attach(_timeoutEntry, 7, 0, 1, 1);
-        walkRow.Attach(_requireFootContact, 8, 0, 1, 1);
-        walkRow.Attach(CreateButton("Emergency Stop", (_, _) => RunAction("EmergencyStop", () => _robot.EmergencyStopLower())), 9, 0, 1, 1);
-        root.PackStart(walkRow, false, false, 0);
+        root.PackStart(policyLabel, false, false, 0);
 
         _monitoringFrame = BuildMonitoringPanel();
         _monitoringFrame.Hide();
@@ -203,64 +187,6 @@ public sealed class MainWindow : Window
         return menuBar;
     }
 
-    void ExecuteThreeCycleWalk()
-    {
-        _cyclesEntry.Text = "3";
-        ExecuteSupervisedWalk();
-    }
-
-    void ExecuteSupervisedWalk()
-    {
-        if (!TryReadWalkInputs(out int cycles, out int stepDurationMs, out int interpolationSteps, out int timeoutMs))
-            return;
-
-        RunAction(
-            "ExecuteSupervisedWalk",
-            () => _robot.ExecuteWalkCycleSupervised(
-                cycles,
-                stepDurationMs,
-                interpolationSteps,
-                timeoutMs,
-                _requireFootContact.Active));
-    }
-
-    void ExecuteSeatedHandshakeTest()
-    {
-        RunAction(
-            "SeatedHandshake",
-            () => _robot.ExecuteSeatedHandshakeSafetyTest(shakes: 3, stepDurationMs: 450, interpolationSteps: 8));
-    }
-
-    bool TryReadWalkInputs(out int cycles, out int stepDurationMs, out int interpolationSteps, out int timeoutMs)
-    {
-        cycles = 0;
-        stepDurationMs = 0;
-        interpolationSteps = 0;
-        timeoutMs = 0;
-
-        if (!int.TryParse(_cyclesEntry.Text, out cycles) || cycles < 1)
-        {
-            ValidationFail("Invalid cycles value.");
-            return false;
-        }
-        if (!int.TryParse(_stepDurationEntry.Text, out stepDurationMs) || stepDurationMs < 100)
-        {
-            ValidationFail("Invalid step duration (min 100 ms).");
-            return false;
-        }
-        if (!int.TryParse(_interpolationEntry.Text, out interpolationSteps) || interpolationSteps < 1)
-        {
-            ValidationFail("Invalid interpolation step count.");
-            return false;
-        }
-        if (!int.TryParse(_timeoutEntry.Text, out timeoutMs) || timeoutMs < 1000)
-        {
-            ValidationFail("Invalid timeout (min 1000 ms).");
-            return false;
-        }
-        return true;
-    }
-
     void ValidationFail(string message)
     {
         _statusLabel.Text = "Validation: FAIL";
@@ -299,7 +225,6 @@ public sealed class MainWindow : Window
         string phrase = actionName switch
         {
             "BodyCalibrate" => "I will calibrate body awareness now.",
-            "SeatedHandshake" => "I will perform a seated handshake safety test.",
             "Initialize" => "I will initialize motor systems now.",
             "EmergencyStop" => "I will apply emergency stop torque off.",
             _ => $"I will execute {actionName}."

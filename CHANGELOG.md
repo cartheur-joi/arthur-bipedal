@@ -11,6 +11,10 @@ All notable changes to this project are documented in this file.
 - Linked epic as planning anchor from `README.md` and `TODO.md`.
 - Added reusable strict daily agent prompt at `docs/process/daily-agent-prompts.md` and linked it from `README.md` and `TODO.md`.
 - Documented mandatory development policy that Animation Training is the sole approved process for new pose/gait programming and that agent tasks must map to epic policy.
+- Added Animation Training task/session documentation scaffold:
+  - `docs/tasks/README.md` (task index),
+  - `docs/tasks/animation-training-task-001-seated-handshake.md`,
+  - `docs/sessions/2026-03-16-at-001-seated-handshake-session-01.md`.
 
 ### Changed (Stable Sitting Capture Storage)
 - Added CLI capture command in `joi-gtk`: `--capture-stable-sitting`.
@@ -62,9 +66,13 @@ All notable changes to this project are documented in this file.
 
 ### Added (Seated Safety Test)
 - Added `ExecuteSeatedHandshakeSafetyTest(...)` to `RobotControlService` for chair-seated right-arm validation using existing `SafetyGate` protections.
-- Added GTK main-window action button: `Handshake (Seated)`.
 - Added CLI command: `--seated-handshake-test [shakes]`.
 - Routine returns the tested arm to origin pose after the handshake sequence (best effort), while retaining fail-safe torque-off behavior on safety trips.
+
+### Changed (GTK Policy Alignment)
+- Main GTK form now reflects animation-training-only policy for pose/gait programming.
+- Removed direct main-form seated handshake trigger to avoid bypassing training-driven flows.
+- Removed stale walk-parameter row from main form and retained `Emergency Stop` as a primary control.
 
 ### Changed (GTK Compatibility)
 - Replaced deprecated GTK calls in `MainWindow`:

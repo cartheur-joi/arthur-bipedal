@@ -5,6 +5,7 @@
 Formal planning anchor:
 - `docs/epics/animation-training-epic.md`
 - `docs/process/daily-agent-prompts.md`
+- `docs/tasks/README.md`
 
 Mandatory policy for all agent tasks:
 - Animation Training is the sole approved method for pose/gait programming.
@@ -14,10 +15,13 @@ Mandatory policy for all agent tasks:
 1. Animation Training Epic Backlog (Immediate)
 - Execute items in `docs/epics/animation-training-epic.md` under `Immediate Backlog (Now)`.
 - Keep this list aligned with epic milestones and acceptance criteria.
+- First canonical task package:
+  - Task spec: `docs/tasks/animation-training-task-001-seated-handshake.md`
+  - Session log: `docs/sessions/2026-03-16-at-001-seated-handshake-session-01.md`
 
 2. Standing Threshold Calibration Session
 - Run strict startup body calibration first (`Body Calibrate` or `--body-calibrate`).
-- Run seated handshake safety test first (`Handshake (Seated)` or `--seated-handshake-test`) to confirm arm-scope safety gating before standing work.
+- Run seated handshake safety test first (`--seated-handshake-test`) to confirm arm-scope safety gating before standing work.
 - Start monitor, run safe sweeps for ankles/knees/hips, and tune `motor-overload-thresholds.json`.
 - Goal: no false trips at stable stance, immediate trips near hard-stop/load risk.
 
