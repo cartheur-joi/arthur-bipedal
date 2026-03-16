@@ -113,10 +113,38 @@ internal static class Program
             return;
         }
 
+        if (!CanStartGtkUi(out string uiReason))
+        {
+            Console.WriteLine($"GTK_STARTUP status=blocked reason={uiReason}");
+            Console.WriteLine("Run CLI mode commands (for example --self-test / --speech-command-test),");
+            Console.WriteLine("or launch from a graphical desktop session with DISPLAY/WAYLAND enabled.");
+            return;
+        }
+
         Application.Init();
         MainWindow window = new();
         window.ShowAll();
         Application.Run();
+    }
+
+    static bool CanStartGtkUi(out string reason)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            reason = "unsupported-os-for-this-build";
+            return false;
+        }
+
+        string display = Environment.GetEnvironmentVariable("DISPLAY") ?? string.Empty;
+        string wayland = Environment.GetEnvironmentVariable("WAYLAND_DISPLAY") ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(display) || !string.IsNullOrWhiteSpace(wayland))
+        {
+            reason = "ok";
+            return true;
+        }
+
+        reason = "no-display-environment";
+        return false;
     }
 
     static void ConfigureNativeResolver()

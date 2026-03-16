@@ -17,7 +17,7 @@ Mandatory policy for all agent tasks:
 - Keep this list aligned with epic milestones and acceptance criteria.
 - First canonical task package:
   - Task spec: `docs/tasks/animation-training-task-001-seated-handshake.md`
-  - Session log: `docs/sessions/2026-03-16-at-001-seated-handshake-session-01.md`
+  - Latest session log: `docs/sessions/2026-03-16-at-001-seated-handshake-session-02.md`
 
 2. Standing Threshold Calibration Session
 - Run strict startup body calibration first (`Body Calibrate` or `--body-calibrate`).

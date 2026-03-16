@@ -70,10 +70,40 @@ public sealed class AnimationTrainingService
         if (frames.Count == 0)
             throw new InvalidOperationException($"No training session found for replay phrase '{normalizedPhrase}'.");
 
+        Exception replayFailure = null;
         foreach (Dictionary<string, int> frame in frames)
         {
-            _robot.MoveToPositions(frame, stepDurationMs, 6);
+            try
+            {
+                _robot.MoveToPositions(frame, stepDurationMs, 6);
+            }
+            catch (Exception ex)
+            {
+                replayFailure = ex;
+                break;
+            }
         }
+
+        Exception recoveryFailure = null;
+        try
+        {
+            _robot.EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 15);
+        }
+        catch (Exception ex)
+        {
+            recoveryFailure = ex;
+        }
+
+        if (replayFailure != null && recoveryFailure != null)
+        {
+            throw new InvalidOperationException(
+                $"Replay failed ({replayFailure.Message}) and seated recovery failed ({recoveryFailure.Message}).",
+                replayFailure);
+        }
+        if (replayFailure != null)
+            throw replayFailure;
+        if (recoveryFailure != null)
+            throw new InvalidOperationException($"Replay completed but seated recovery failed: {recoveryFailure.Message}", recoveryFailure);
 
         return frames.Count;
     }

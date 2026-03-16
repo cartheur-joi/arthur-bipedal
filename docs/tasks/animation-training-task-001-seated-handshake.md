@@ -4,9 +4,9 @@
 - Task ID: `AT-001`
 - Epic: `Animation Training Epic`
 - Name: `Seated Handshake`
-- Status: `Draft`
+- Status: `Active`
 - Canonical Phrase Name: `seated_handshake`
-- Current Revision: `v1-draft`
+- Current Revision: `v1.0-candidate`
 
 ## Intent
 Define and validate a safe, training-driven seated handshake routine that can be

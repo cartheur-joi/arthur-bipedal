@@ -6,4 +6,4 @@ This index tracks canonical Animation Training tasks and their latest session lo
 
 | Task ID | Name | Status | Latest Session |
 |---|---|---|---|
-| AT-001 | Seated Handshake | Draft | `docs/sessions/2026-03-16-at-001-seated-handshake-session-01.md` |
+| AT-001 | Seated Handshake | Active | `docs/sessions/2026-03-16-at-001-seated-handshake-session-02.md` |
