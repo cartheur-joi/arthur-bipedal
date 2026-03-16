@@ -1,0 +1,42 @@
+{
+  "modelVersion": "arthur-body-v1",
+  "rootJoint": "abs_z",
+  "defaults": {
+    "hardMin": 0,
+    "hardMax": 4095,
+    "softMin": 400,
+    "softMax": 3680
+  },
+  "joints": {
+    "head_z": { "parent": "bust_x", "axis": "yaw", "location": "upper" },
+    "head_y": { "parent": "head_z", "axis": "pitch", "location": "upper" },
+
+    "bust_y": { "parent": "abs_z", "axis": "pitch", "location": "upper" },
+    "bust_x": { "parent": "bust_y", "axis": "roll", "location": "upper" },
+    "abs_z": { "parent": "", "axis": "yaw", "location": "upper" },
+    "abs_y": { "parent": "abs_z", "axis": "pitch", "location": "upper" },
+    "abs_x": { "parent": "abs_z", "axis": "roll", "location": "upper" },
+
+    "l_shoulder_y": { "parent": "bust_x", "axis": "pitch", "location": "upper", "limits": { "softMin": 560, "softMax": 3560 } },
+    "l_shoulder_x": { "parent": "l_shoulder_y", "axis": "roll", "location": "upper", "limits": { "softMin": 600, "softMax": 3520 } },
+    "l_arm_z": { "parent": "l_shoulder_x", "axis": "yaw", "location": "upper", "limits": { "softMin": 520, "softMax": 3600 } },
+    "l_elbow_y": { "parent": "l_arm_z", "axis": "pitch", "location": "upper", "limits": { "softMin": 640, "softMax": 3600 } },
+
+    "r_shoulder_y": { "parent": "bust_x", "axis": "pitch", "location": "upper", "limits": { "softMin": 560, "softMax": 3560 } },
+    "r_shoulder_x": { "parent": "r_shoulder_y", "axis": "roll", "location": "upper", "limits": { "softMin": 600, "softMax": 3520 } },
+    "r_arm_z": { "parent": "r_shoulder_x", "axis": "yaw", "location": "upper", "limits": { "softMin": 520, "softMax": 3600 } },
+    "r_elbow_y": { "parent": "r_arm_z", "axis": "pitch", "location": "upper", "limits": { "softMin": 640, "softMax": 3600 } },
+
+    "l_hip_z": { "parent": "abs_z", "axis": "yaw", "location": "lower", "limits": { "softMin": 480, "softMax": 3680 } },
+    "l_hip_y": { "parent": "l_hip_z", "axis": "pitch", "location": "lower", "limits": { "softMin": 480, "softMax": 3680 } },
+    "l_hip_x": { "parent": "l_hip_y", "axis": "roll", "location": "lower", "limits": { "softMin": 480, "softMax": 3680 } },
+    "l_knee_y": { "parent": "l_hip_x", "axis": "pitch", "location": "lower", "limits": { "softMin": 520, "softMax": 3680 } },
+    "l_ankle_y": { "parent": "l_knee_y", "axis": "pitch", "location": "lower", "limits": { "softMin": 480, "softMax": 3720 } },
+
+    "r_hip_z": { "parent": "abs_z", "axis": "yaw", "location": "lower", "limits": { "softMin": 480, "softMax": 3680 } },
+    "r_hip_y": { "parent": "r_hip_z", "axis": "pitch", "location": "lower", "limits": { "softMin": 480, "softMax": 3680 } },
+    "r_hip_x": { "parent": "r_hip_y", "axis": "roll", "location": "lower", "limits": { "softMin": 480, "softMax": 3680 } },
+    "r_knee_y": { "parent": "r_hip_x", "axis": "pitch", "location": "lower", "limits": { "softMin": 520, "softMax": 3680 } },
+    "r_ankle_y": { "parent": "r_knee_y", "axis": "pitch", "location": "lower", "limits": { "softMin": 480, "softMax": 3720 } }
+  }
+}

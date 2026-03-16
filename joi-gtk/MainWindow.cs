@@ -29,6 +29,7 @@ public sealed class MainWindow : Window
     readonly TextView _logView = new() { Editable = false, CursorVisible = false, Monospace = true, WrapMode = WrapMode.WordChar };
     readonly Entry _overloadThresholdEntry = new() { Text = "900", WidthChars = 6 };
     readonly Label _monitorSummaryLabel = new("Monitoring stopped");
+    readonly CheckButton _showMotorLabelsToggle = new("Show Labels") { Active = true };
     readonly EventBox _safetyAlertBox = new();
     readonly Label _safetyAlertLabel = new("Safety normal");
     readonly ComboBoxText _sweepMotorSelection = new();
@@ -44,6 +45,7 @@ public sealed class MainWindow : Window
         typeof(string),
         typeof(string));
     readonly Dictionary<string, EventBox> _motorIndicators = new();
+    readonly List<Widget> _motorLabelWidgets = new();
     readonly Dictionary<EventBox, CssProvider> _eventBoxCssProviders = new();
     readonly Frame _monitoringFrame;
     AnimationTrainingWindow _animationTrainingWindow;
@@ -90,6 +92,7 @@ public sealed class MainWindow : Window
         actionRow.PackStart(CreateButton("Torque ON (Lower)", (_, _) => RunAction("TorqueOnLower", () => _robot.TorqueOnLower())), false, false, 0);
         actionRow.PackStart(CreateButton("Torque OFF (Lower)", (_, _) => RunAction("TorqueOffLower", () => _robot.TorqueOffLower())), false, false, 0);
         actionRow.PackStart(CreateButton("Read Lower Telemetry", (_, _) => RunAction("ReadLowerTelemetry", () => _robot.ReadLowerTelemetry())), false, false, 0);
+        actionRow.PackStart(CreateButton("Body Calibrate", (_, _) => RunAction("BodyCalibrate", () => _robot.RunStartupBodyAwarenessCalibration(strict: true))), false, false, 0);
         actionRow.PackStart(CreateButton("Read IMU", (_, _) => RunAction("ReadIMU", () => _robot.ReadImuTelemetry())), false, false, 0);
         actionRow.PackStart(CreateButton("Balance Step", (_, _) => RunAction("BalanceStep", () => _robot.ApplyStandingBalanceCompensationStep())), false, false, 0);
         actionRow.PackStart(CreateButton("Handshake (Seated)", (_, _) => ExecuteSeatedHandshakeTest()), false, false, 0);
@@ -390,6 +393,7 @@ public sealed class MainWindow : Window
         Box controls = new(Orientation.Horizontal, 8);
         controls.PackStart(new Label("Overload threshold") { Xalign = 0 }, false, false, 0);
         controls.PackStart(_overloadThresholdEntry, false, false, 0);
+        controls.PackStart(_showMotorLabelsToggle, false, false, 0);
         controls.PackStart(CreateButton("Refresh Snapshot", (_, _) => RunMonitoringSnapshot("ManualRefresh", false)), false, false, 0);
         controls.PackStart(CreateButton("Start Monitoring", (_, _) => StartMonitoring()), false, false, 0);
         controls.PackStart(CreateButton("Stop Monitoring", (_, _) => StopMonitoring()), false, false, 0);
@@ -622,11 +626,52 @@ public sealed class MainWindow : Window
             SetIndicatorColor(indicator, IndicatorState.Normal);
             canvas.Put(indicator, x, y);
             _motorIndicators[motor] = indicator;
+
+            Widget labelWidget = BuildMotorLabelWidget(motor, x);
+            canvas.Put(labelWidget, ResolveLabelX(x), y - 2);
+            _motorLabelWidgets.Add(labelWidget);
         }
+
+        _showMotorLabelsToggle.Toggled += (_, _) => UpdateMotorLabelVisibility();
+        UpdateMotorLabelVisibility();
 
         scroll.Add(canvas);
         frame.Add(scroll);
         return frame;
+    }
+
+    Widget BuildMotorLabelWidget(string motor, int indicatorX)
+    {
+        EventBox tag = new();
+        SetEventBoxColor(tag, 0.10, 0.10, 0.10);
+
+        Label label = new()
+        {
+            Xalign = indicatorX >= 300 ? 0f : 1f,
+            UseMarkup = true,
+            Markup = $"<span foreground=\"white\" size=\"small\">{GLib.Markup.EscapeText(motor)}</span>"
+        };
+        tag.Add(label);
+        return tag;
+    }
+
+    void UpdateMotorLabelVisibility()
+    {
+        bool visible = _showMotorLabelsToggle.Active;
+        foreach (Widget widget in _motorLabelWidgets)
+        {
+            if (visible)
+                widget.ShowAll();
+            else
+                widget.Hide();
+        }
+    }
+
+    static int ResolveLabelX(int indicatorX)
+    {
+        if (indicatorX >= 300)
+            return indicatorX + 16;
+        return Math.Max(4, indicatorX - 100);
     }
 
     static string ResolveMotorMapImagePath()

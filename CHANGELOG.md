@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased] - 2026-03-14
 
+### Added (Startup Body Awareness)
+- Added machine-readable body model policy at `joi-gtk/config/body-model.json` with parent-link, axis, region, and hard/soft limit metadata.
+- Added startup body-awareness calibration algorithm in `RobotControlService`:
+  - reads live joint telemetry against model limits,
+  - writes `logs/body-awareness-last.json` report,
+  - supports strict-mode fail behavior with upper/lower torque-off fail-safe.
+- Added CLI command: `--body-calibrate` (strict) with optional `--non-strict`.
+- Added GTK main action button: `Body Calibrate`.
+
 ### Added (Thermal + Voltage Guardrails)
 - Extended `joi-gtk/config/motor-overload-thresholds.json` to support safety defaults and per-motor guardrails for:
   - overload threshold,

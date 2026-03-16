@@ -28,6 +28,9 @@
     <None Include="config\motor-overload-thresholds.json" Link="config\motor-overload-thresholds.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="config\body-model.json" Link="config\body-model.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

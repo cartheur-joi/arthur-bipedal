@@ -19,6 +19,8 @@ public sealed class RobotControlService
     readonly Dictionary<string, int> _motorMaxTemperatures = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> _motorMinVoltages = new(StringComparer.Ordinal);
     readonly string _safetyEventLogPath;
+    readonly BodyModelPolicy _bodyModelPolicy;
+    readonly string _bodyCalibrationReportPath;
     int _safetyOverloadThreshold = MotorFunctions.PresentLoadAlarm;
     int _safetyMaxTemperature = 70;
     int _safetyMinVoltage = 90;
@@ -32,6 +34,8 @@ public sealed class RobotControlService
         _walkController = new WalkController(_motorControl, _imuProvider);
         LoadMotorSafetyThresholdPolicy();
         _safetyEventLogPath = ResolveSafetyEventLogPath();
+        _bodyModelPolicy = LoadBodyModelPolicy();
+        _bodyCalibrationReportPath = ResolveBodyCalibrationReportPath();
     }
 
     public string Initialize()
@@ -309,6 +313,81 @@ public sealed class RobotControlService
             _motorControl.SetTorqueOff("lower");
             EnsureLastTxRxSuccessOnLower("EmergencyStop");
             return "Emergency stop applied: lower-body torque disabled.";
+        });
+    }
+
+    public string RunStartupBodyAwarenessCalibration(bool strict = true)
+    {
+        return ExecuteOnBus("BodyAwarenessCalibration", () =>
+        {
+            BodyModelPolicy policy = _bodyModelPolicy;
+            if (policy == null || policy.Joints == null || policy.Joints.Count == 0)
+                throw new InvalidOperationException("Body model policy is not available. Check config/body-model.json.");
+
+            List<BodyJointCalibrationSample> samples = new();
+            List<string> missingJoints = new();
+
+            foreach ((string jointName, BodyJointPolicy jointPolicy) in policy.Joints.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            {
+                if (Motor.MotorContext == null || !Motor.MotorContext.ContainsKey(jointName))
+                {
+                    missingJoints.Add(jointName);
+                    continue;
+                }
+
+                ResolvedJointLimits limits = ResolveJointLimits(policy, jointPolicy);
+                ushort position = _motorControl.GetPresentPosition(jointName);
+                ushort load = NormalizeLoad(_motorControl.GetPresentLoad(jointName));
+                ushort temperature = _motorControl.GetPresentTemperture(jointName);
+                ushort voltage = _motorControl.GetPresentVoltage(jointName);
+
+                bool withinHardRange = position >= limits.HardMin && position <= limits.HardMax;
+                bool withinSoftRange = position >= limits.SoftMin && position <= limits.SoftMax;
+                double softRangeProgress = limits.SoftMax > limits.SoftMin
+                    ? (position - limits.SoftMin) / (double)(limits.SoftMax - limits.SoftMin)
+                    : 0.0;
+
+                samples.Add(new BodyJointCalibrationSample(
+                    jointName,
+                    jointPolicy.Parent ?? string.Empty,
+                    jointPolicy.Axis ?? string.Empty,
+                    jointPolicy.Location ?? Motor.ReturnLocation(jointName),
+                    position,
+                    load,
+                    temperature,
+                    voltage,
+                    limits.HardMin,
+                    limits.HardMax,
+                    limits.SoftMin,
+                    limits.SoftMax,
+                    withinHardRange,
+                    withinSoftRange,
+                    softRangeProgress));
+            }
+
+            BodyCalibrationReport report = new(
+                DateTimeOffset.UtcNow,
+                policy.ModelVersion ?? "unknown",
+                policy.RootJoint ?? string.Empty,
+                strict,
+                samples,
+                missingJoints);
+
+            PersistBodyCalibrationReport(report);
+
+            int hardViolations = samples.Count(s => !s.WithinHardRange);
+            int softWarnings = samples.Count(s => !s.WithinSoftRange);
+            if (strict && (hardViolations > 0 || missingJoints.Count > 0))
+            {
+                ApplyCalibrationFailSafeTorqueOff();
+                throw new InvalidOperationException(
+                    $"Body awareness calibration failed (strict): hard_violations={hardViolations}, missing_joints={missingJoints.Count}. " +
+                    $"Report={_bodyCalibrationReportPath}");
+            }
+
+            return
+                $"Body calibration completed: joints={samples.Count}, hard_violations={hardViolations}, " +
+                $"soft_warnings={softWarnings}, missing={missingJoints.Count}, report={_bodyCalibrationReportPath}.";
         });
     }
 
@@ -736,6 +815,115 @@ public sealed class RobotControlService
         }
     }
 
+    static BodyModelPolicy LoadBodyModelPolicy()
+    {
+        string policyPath = ResolveBodyModelPolicyPath();
+        if (string.IsNullOrWhiteSpace(policyPath) || !File.Exists(policyPath))
+            return new BodyModelPolicy();
+
+        try
+        {
+            string json = File.ReadAllText(policyPath);
+            BodyModelPolicy policy = JsonSerializer.Deserialize<BodyModelPolicy>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return policy ?? new BodyModelPolicy();
+        }
+        catch
+        {
+            return new BodyModelPolicy();
+        }
+    }
+
+    static string ResolveBodyModelPolicyPath()
+    {
+        string runtimeCopy = Path.Combine(AppContext.BaseDirectory, "config", "body-model.json");
+        if (File.Exists(runtimeCopy))
+            return runtimeCopy;
+
+        string workspacePath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..",
+            "joi-gtk", "config", "body-model.json"));
+        if (File.Exists(workspacePath))
+            return workspacePath;
+
+        return string.Empty;
+    }
+
+    static string ResolveBodyCalibrationReportPath()
+    {
+        string runtimePath = Path.Combine(AppContext.BaseDirectory, "logs", "body-awareness-last.json");
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(runtimePath) ?? "logs");
+            return runtimePath;
+        }
+        catch
+        {
+            return Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..",
+                "logs", "body-awareness-last.json"));
+        }
+    }
+
+    ResolvedJointLimits ResolveJointLimits(BodyModelPolicy policy, BodyJointPolicy jointPolicy)
+    {
+        BodyJointLimits defaults = policy.Defaults ?? new BodyJointLimits();
+        BodyJointLimits limits = jointPolicy?.Limits ?? new BodyJointLimits();
+        int hardMin = limits.HardMin ?? defaults.HardMin ?? 0;
+        int hardMax = limits.HardMax ?? defaults.HardMax ?? 1023;
+        int softMin = limits.SoftMin ?? defaults.SoftMin ?? hardMin;
+        int softMax = limits.SoftMax ?? defaults.SoftMax ?? hardMax;
+
+        hardMin = Clamp(hardMin, 0, 4095);
+        hardMax = Clamp(hardMax, hardMin, 4095);
+        softMin = Clamp(softMin, hardMin, hardMax);
+        softMax = Clamp(softMax, softMin, hardMax);
+        return new ResolvedJointLimits(hardMin, hardMax, softMin, softMax);
+    }
+
+    void PersistBodyCalibrationReport(BodyCalibrationReport report)
+    {
+        try
+        {
+            string directory = Path.GetDirectoryName(_bodyCalibrationReportPath) ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+
+            string json = JsonSerializer.Serialize(
+                report,
+                new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(_bodyCalibrationReportPath, json);
+        }
+        catch
+        {
+            // Report writing should never block startup safety flow.
+        }
+    }
+
+    void ApplyCalibrationFailSafeTorqueOff()
+    {
+        try
+        {
+            _motorControl.SetTorqueOff("upper");
+        }
+        catch
+        {
+            // Best effort.
+        }
+
+        try
+        {
+            _motorControl.SetTorqueOff("lower");
+        }
+        catch
+        {
+            // Best effort.
+        }
+    }
+
     static void AutoConfigureLinuxBusMapping()
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -851,6 +1039,111 @@ public sealed class RobotControlService
             ["r_elbow_y"] = elbowY
         };
     }
+}
+
+sealed class BodyModelPolicy
+{
+    public string ModelVersion { get; set; } = "unknown";
+    public string RootJoint { get; set; } = string.Empty;
+    public BodyJointLimits Defaults { get; set; } = new();
+    public Dictionary<string, BodyJointPolicy> Joints { get; set; } = new(StringComparer.Ordinal);
+}
+
+sealed class BodyJointPolicy
+{
+    public string Parent { get; set; } = string.Empty;
+    public string Axis { get; set; } = string.Empty;
+    public string Location { get; set; } = string.Empty;
+    public BodyJointLimits Limits { get; set; } = new();
+}
+
+sealed class BodyJointLimits
+{
+    public int? HardMin { get; set; }
+    public int? HardMax { get; set; }
+    public int? SoftMin { get; set; }
+    public int? SoftMax { get; set; }
+}
+
+readonly record struct ResolvedJointLimits(int HardMin, int HardMax, int SoftMin, int SoftMax);
+
+public sealed class BodyCalibrationReport
+{
+    public BodyCalibrationReport(
+        DateTimeOffset timestampUtc,
+        string modelVersion,
+        string rootJoint,
+        bool strictMode,
+        IReadOnlyList<BodyJointCalibrationSample> joints,
+        IReadOnlyList<string> missingJoints)
+    {
+        TimestampUtc = timestampUtc;
+        ModelVersion = modelVersion;
+        RootJoint = rootJoint;
+        StrictMode = strictMode;
+        Joints = joints;
+        MissingJoints = missingJoints;
+    }
+
+    public DateTimeOffset TimestampUtc { get; }
+    public string ModelVersion { get; }
+    public string RootJoint { get; }
+    public bool StrictMode { get; }
+    public IReadOnlyList<BodyJointCalibrationSample> Joints { get; }
+    public IReadOnlyList<string> MissingJoints { get; }
+}
+
+public sealed class BodyJointCalibrationSample
+{
+    public BodyJointCalibrationSample(
+        string jointName,
+        string parentJoint,
+        string axis,
+        string location,
+        ushort position,
+        ushort load,
+        ushort temperature,
+        ushort voltage,
+        int hardMin,
+        int hardMax,
+        int softMin,
+        int softMax,
+        bool withinHardRange,
+        bool withinSoftRange,
+        double softRangeProgress)
+    {
+        JointName = jointName;
+        ParentJoint = parentJoint;
+        Axis = axis;
+        Location = location;
+        Position = position;
+        Load = load;
+        Temperature = temperature;
+        Voltage = voltage;
+        HardMin = hardMin;
+        HardMax = hardMax;
+        SoftMin = softMin;
+        SoftMax = softMax;
+        WithinHardRange = withinHardRange;
+        WithinSoftRange = withinSoftRange;
+        SoftRangeProgress = softRangeProgress;
+    }
+
+    public string JointName { get; }
+    public string ParentJoint { get; }
+    public string Axis { get; }
+    public string Location { get; }
+    public ushort Position { get; }
+    public ushort Load { get; }
+    public ushort Temperature { get; }
+    public ushort Voltage { get; }
+    public int HardMin { get; }
+    public int HardMax { get; }
+    public int SoftMin { get; }
+    public int SoftMax { get; }
+    public bool WithinHardRange { get; }
+    public bool WithinSoftRange { get; }
+    public double SoftRangeProgress { get; }
 }
 
 public sealed class SafetyGateTrip

@@ -59,6 +59,37 @@ Tuning guidance for standing development:
 - Keep left/right thresholds symmetric unless hardware asymmetry is confirmed.
 - Change only one joint group at a time and retest monitor alerts after each change.
 
+## Startup Body Awareness Calibration
+
+`joi-gtk` now includes a machine-readable body model and a startup calibration algorithm:
+
+- Body model file: `joi-gtk/config/body-model.json`
+- Runtime copy: `joi-gtk/bin/Debug/net9.0/config/body-model.json`
+- Calibration report output: `logs/body-awareness-last.json`
+
+Algorithm flow:
+
+1. Load body graph (`rootJoint`, parent links, axes, location tags, hard/soft limits).
+2. Read live joint telemetry (position/load/temperature/voltage) for each configured joint.
+3. Validate `position` against hard and soft bounds.
+4. Build a calibration report for all joints (including missing model joints).
+5. In strict mode, fail startup on hard-limit or model-missing violations and apply torque-off fail-safe on upper/lower regions.
+
+Usage:
+
+- CLI strict (default):
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --body-calibrate`
+- CLI relaxed (report only):
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --body-calibrate --non-strict`
+- GTK:
+  - `Body Calibrate` button in main action row (strict mode).
+
+How to use in training:
+
+- Run body calibration once after initialize before gait/sweep sessions.
+- If strict mode fails, inspect `logs/body-awareness-last.json` and correct limits/mechanics first.
+- Keep `body-model.json` updated when parent links or safe operating ranges are tuned.
+
 ## Safety Event Log
 
 `joi-gtk` now writes persistent safety events to:
@@ -120,6 +151,14 @@ Behavior:
 - Applies a small shoulder raise and elbow bend/extend shake cycle around current pose.
 - Returns the arm to its starting pose in a `finally` block (best effort).
 - Any guardrail violation still triggers fail-safe torque-off via existing safety paths.
+
+## Reusable Training Visualization
+
+A reusable labeled motor-body training sheet is available at:
+
+- `images/motors_on_robot_training_map.svg`
+
+It overlays motor labels on `images/motors_on_robot.png` and includes a legend panel for training sessions and calibration notes.
 
 ## MPU6050 Serial Integration (GTK)
 
