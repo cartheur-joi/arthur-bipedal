@@ -44,6 +44,7 @@ public sealed class MainWindow : Window
         typeof(string),
         typeof(string));
     readonly Dictionary<string, EventBox> _motorIndicators = new();
+    readonly Dictionary<EventBox, CssProvider> _eventBoxCssProviders = new();
     readonly Frame _monitoringFrame;
     AnimationTrainingWindow _animationTrainingWindow;
     CameraWindow _cameraWindow;
@@ -56,6 +57,7 @@ public sealed class MainWindow : Window
     bool _safetyToneInFlight;
     CancellationTokenSource _sweepCancellation;
     bool _sweepInProgress;
+    int _eventBoxStyleSeed;
 
     public MainWindow() : base("Arthur Bipedal - Linux Control Panel (GTK#)")
     {
@@ -614,7 +616,7 @@ public sealed class MainWindow : Window
             _motorIndicators[motor] = indicator;
         }
 
-        scroll.AddWithViewport(canvas);
+        scroll.Add(canvas);
         frame.Add(scroll);
         return frame;
     }
@@ -653,7 +655,7 @@ public sealed class MainWindow : Window
         CommError
     }
 
-    static void SetIndicatorColor(EventBox indicator, IndicatorState state)
+    void SetIndicatorColor(EventBox indicator, IndicatorState state)
     {
         (double red, double green, double blue) = state switch
         {
@@ -663,13 +665,34 @@ public sealed class MainWindow : Window
             _ => (0.72, 0.72, 0.72)
         };
 
-        indicator.OverrideBackgroundColor(StateFlags.Normal, new Gdk.RGBA
+        SetEventBoxColor(indicator, red, green, blue);
+    }
+
+    void SetEventBoxColor(EventBox target, double red, double green, double blue)
+    {
+        if (!_eventBoxCssProviders.TryGetValue(target, out CssProvider provider))
         {
-            Red = red,
-            Green = green,
-            Blue = blue,
-            Alpha = 1.0
-        });
+            provider = new CssProvider();
+            _eventBoxCssProviders[target] = provider;
+            target.StyleContext.AddProvider(provider, (uint)StyleProviderPriority.Application);
+        }
+
+        if (string.IsNullOrWhiteSpace(target.Name))
+            target.Name = $"eventbox-{Interlocked.Increment(ref _eventBoxStyleSeed)}";
+
+        int r = ClampByte(red);
+        int g = ClampByte(green);
+        int b = ClampByte(blue);
+        string css = $"#{target.Name} {{ background-color: rgba({r}, {g}, {b}, 1.0); }}";
+        provider.LoadFromData(css);
+    }
+
+    static int ClampByte(double value)
+    {
+        int scaled = (int)Math.Round(value * 255.0, MidpointRounding.AwayFromZero);
+        if (scaled < 0) return 0;
+        if (scaled > 255) return 255;
+        return scaled;
     }
 
     void StartMonitoring()
@@ -843,13 +866,7 @@ public sealed class MainWindow : Window
         _safetyAlertLabel.Markup = "<b>Safety normal</b>";
         _safetyAlertBox.BorderWidth = 6;
         _safetyAlertBox.Add(_safetyAlertLabel);
-        _safetyAlertBox.OverrideBackgroundColor(StateFlags.Normal, new Gdk.RGBA
-        {
-            Red = 0.75,
-            Green = 0.12,
-            Blue = 0.12,
-            Alpha = 1.0
-        });
+        SetEventBoxColor(_safetyAlertBox, 0.75, 0.12, 0.12);
     }
 
     void OnSafetyGateTripped(SafetyGateTrip trip)

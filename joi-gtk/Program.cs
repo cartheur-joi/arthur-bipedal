@@ -49,6 +49,18 @@ internal static class Program
             RunImuProbe();
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--safety-report", StringComparison.OrdinalIgnoreCase))
+        {
+            int topN = ParseTopCount(args, 1, 5);
+            RunSafetyReport(pathOverride: null, topN);
+            return;
+        }
+        if (args.Length > 1 && string.Equals(args[0], "--safety-report-file", StringComparison.OrdinalIgnoreCase))
+        {
+            int topN = ParseTopCount(args, 2, 5);
+            RunSafetyReport(args[1], topN);
+            return;
+        }
 
         Application.Init();
         MainWindow window = new();
@@ -296,5 +308,254 @@ internal static class Program
             Console.WriteLine(service.ReadImuTelemetry());
             Thread.Sleep(250);
         }
+    }
+
+    static int ParseTopCount(string[] args, int index, int fallback)
+    {
+        if (args.Length <= index)
+            return fallback;
+        if (!int.TryParse(args[index], out int parsed) || parsed <= 0)
+            return fallback;
+        return parsed;
+    }
+
+    static void RunSafetyReport(string pathOverride, int topN)
+    {
+        string[] candidates = ResolveSafetyReportCandidates(pathOverride);
+        string logPath = candidates.FirstOrDefault(File.Exists) ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(logPath))
+        {
+            Console.WriteLine("SAFETY_REPORT status=no-log-file");
+            Console.WriteLine("Checked paths:");
+            foreach (string candidate in candidates)
+                Console.WriteLine($"  - {candidate}");
+            return;
+        }
+
+        Dictionary<string, int> eventCounts = new(StringComparer.Ordinal);
+        Dictionary<string, int> actionCounts = new(StringComparer.Ordinal);
+        Dictionary<string, int> phaseCounts = new(StringComparer.Ordinal);
+        Dictionary<string, int> motorCounts = new(StringComparer.Ordinal);
+        Dictionary<string, int> guardrailCounts = new(StringComparer.Ordinal);
+        Queue<string> recentTrips = new();
+
+        int totalLines = 0;
+        int malformed = 0;
+        int safetyTrips = 0;
+
+        foreach (string rawLine in File.ReadLines(logPath))
+        {
+            string line = rawLine?.Trim() ?? string.Empty;
+            if (line.Length == 0)
+                continue;
+
+            totalLines++;
+            if (!TryParseSafetyLogLine(line, out string timestamp, out Dictionary<string, string> fields))
+            {
+                malformed++;
+                continue;
+            }
+
+            string eventType = GetField(fields, "event");
+            if (eventType.Length > 0)
+                Increment(eventCounts, eventType);
+
+            if (!string.Equals(eventType, "SAFETY_GATE_TRIP", StringComparison.Ordinal))
+                continue;
+
+            safetyTrips++;
+            string action = GetField(fields, "action");
+            string phase = GetField(fields, "phase");
+            string scope = GetField(fields, "scope");
+            string detail = GetField(fields, "detail");
+
+            if (action.Length > 0)
+                Increment(actionCounts, action);
+            if (phase.Length > 0)
+                Increment(phaseCounts, phase);
+
+            foreach (string motor in ExtractMotors(scope, detail))
+                Increment(motorCounts, motor);
+            foreach ((string guardrail, bool active) in ExtractGuardrails(detail))
+            {
+                if (active)
+                    Increment(guardrailCounts, guardrail);
+            }
+
+            string summary = $"[{timestamp}] action={action} phase={phase} scope={scope}";
+            if (recentTrips.Count == 5)
+                recentTrips.Dequeue();
+            recentTrips.Enqueue(summary);
+        }
+
+        Console.WriteLine($"SAFETY_REPORT file={logPath}");
+        Console.WriteLine($"LINES total={totalLines} safety_trips={safetyTrips} malformed={malformed}");
+        PrintTop("EVENTS", eventCounts, topN);
+        PrintTop("ACTIONS", actionCounts, topN);
+        PrintTop("PHASES", phaseCounts, topN);
+        PrintTop("MOTORS", motorCounts, topN);
+        PrintTop("GUARDRAILS", guardrailCounts, topN);
+
+        Console.WriteLine("RECENT_TRIPS");
+        if (recentTrips.Count == 0)
+        {
+            Console.WriteLine("  none");
+        }
+        else
+        {
+            foreach (string summary in recentTrips)
+                Console.WriteLine($"  {summary}");
+        }
+    }
+
+    static string[] ResolveSafetyReportCandidates(string pathOverride)
+    {
+        if (!string.IsNullOrWhiteSpace(pathOverride))
+            return new[] { Path.GetFullPath(pathOverride) };
+
+        string runtimePath = Path.Combine(AppContext.BaseDirectory, "logs", "safety-events.log");
+        string workspacePath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..",
+            "logs", "safety-events.log"));
+
+        return new[] { runtimePath, workspacePath };
+    }
+
+    static bool TryParseSafetyLogLine(string line, out string timestamp, out Dictionary<string, string> fields)
+    {
+        timestamp = string.Empty;
+        fields = new Dictionary<string, string>(StringComparer.Ordinal);
+        string[] parts = line.Split('\t');
+        if (parts.Length < 2)
+            return false;
+
+        timestamp = parts[0].Trim();
+        for (int i = 1; i < parts.Length; i++)
+        {
+            string part = parts[i];
+            int equalsIndex = part.IndexOf('=');
+            if (equalsIndex <= 0 || equalsIndex == part.Length - 1)
+                continue;
+
+            string key = part.Substring(0, equalsIndex).Trim();
+            string value = part.Substring(equalsIndex + 1).Trim();
+            if (key.Length > 0)
+                fields[key] = value;
+        }
+
+        return fields.Count > 0;
+    }
+
+    static string GetField(IReadOnlyDictionary<string, string> fields, string key)
+    {
+        if (fields.TryGetValue(key, out string value) && !string.IsNullOrWhiteSpace(value))
+            return value;
+        return string.Empty;
+    }
+
+    static IEnumerable<string> ExtractMotors(string scope, string detail)
+    {
+        HashSet<string> results = new(StringComparer.Ordinal);
+
+        if (!string.IsNullOrWhiteSpace(scope) &&
+            !string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (string motor in scope.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                results.Add(motor);
+        }
+
+        if (!string.IsNullOrWhiteSpace(detail))
+        {
+            foreach ((string _, string value) in ParseDetailSections(detail))
+            {
+                foreach (string token in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    string normalizedToken = NormalizeToken(token);
+                    if (string.Equals(normalizedToken, "none", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    int colonIndex = normalizedToken.IndexOf(':');
+                    string motor = colonIndex > 0
+                        ? NormalizeToken(normalizedToken.Substring(0, colonIndex))
+                        : normalizedToken;
+                    if (motor.Length > 0 && !string.Equals(motor, "none", StringComparison.OrdinalIgnoreCase))
+                        results.Add(motor);
+                }
+            }
+        }
+
+        return results;
+    }
+
+    static IEnumerable<(string Guardrail, bool Active)> ExtractGuardrails(string detail)
+    {
+        Dictionary<string, string> sections = ParseDetailSections(detail);
+        return new (string Guardrail, bool Active)[]
+        {
+            ("Comm", IsActiveSection(sections, "Comm")),
+            ("Overload", IsActiveSection(sections, "Overload")),
+            ("Thermal", IsActiveSection(sections, "Thermal")),
+            ("Voltage", IsActiveSection(sections, "Voltage")),
+            ("TorqueOff", IsActiveSection(sections, "TorqueOff"))
+        };
+    }
+
+    static bool IsActiveSection(IReadOnlyDictionary<string, string> sections, string key)
+    {
+        if (!sections.TryGetValue(key, out string value) || string.IsNullOrWhiteSpace(value))
+            return false;
+        return !string.Equals(NormalizeToken(value), "none", StringComparison.OrdinalIgnoreCase);
+    }
+
+    static Dictionary<string, string> ParseDetailSections(string detail)
+    {
+        Dictionary<string, string> sections = new(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(detail))
+            return sections;
+
+        foreach (string segment in detail.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            int equalsIndex = segment.IndexOf('=');
+            if (equalsIndex <= 0 || equalsIndex == segment.Length - 1)
+                continue;
+
+            string key = segment.Substring(0, equalsIndex).Trim();
+            string value = segment.Substring(equalsIndex + 1).Trim();
+            if (key.Length > 0)
+                sections[key] = value;
+        }
+
+        return sections;
+    }
+
+    static string NormalizeToken(string value)
+    {
+        return value.Trim().TrimEnd('.');
+    }
+
+    static void PrintTop(string title, IReadOnlyDictionary<string, int> counts, int topN)
+    {
+        Console.WriteLine(title);
+        if (counts.Count == 0)
+        {
+            Console.WriteLine("  none");
+            return;
+        }
+
+        foreach ((string key, int value) in counts
+            .OrderByDescending(pair => pair.Value)
+            .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+            .Take(topN))
+        {
+            Console.WriteLine($"  {key}: {value}");
+        }
+    }
+
+    static void Increment(IDictionary<string, int> counts, string key)
+    {
+        if (counts.TryGetValue(key, out int existing))
+            counts[key] = existing + 1;
+        else
+            counts[key] = 1;
     }
 }

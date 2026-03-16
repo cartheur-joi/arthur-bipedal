@@ -10,9 +10,9 @@
 - Thermal/voltage guardrails are now enforced in policy + SafetyGate.
 - Run standing sessions and tune per-motor `maxTemperature` and `minVoltage` values to reduce false positives.
 
-3. Add Safety Replay Report Command
-- Parse `logs/safety-events.log` and summarize most frequent tripping motors/actions.
-- Use the report to prioritize tuning and mechanical checks.
+3. Use Safety Replay Report for Daily Tuning
+- Run `--safety-report` after standing sessions and track top actions/motors over time.
+- Use repeated guardrail hits to prioritize mechanical checks and threshold adjustments.
 
 4. Add Sweep Presets for Standing Development
 - Add preset controls for ankles, knees, and hips with conservative ranges/durations.

@@ -74,6 +74,25 @@ Each line records:
 - fail-safe action result
 - safety detail payload
 
+## Safety Replay Report (CLI)
+
+Use the report command to summarize frequent safety trips from the persistent log:
+
+- Auto-discovery (runtime then workspace log paths):
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --safety-report`
+- Limit top rows:
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --safety-report 10`
+- Explicit log file path:
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --safety-report-file logs/safety-events.log`
+
+Report output includes:
+
+- total parsed lines and malformed count
+- top events/actions/phases
+- most frequent motors involved in trips
+- guardrail hit counts (`Comm`, `Overload`, `Thermal`, `Voltage`, `TorqueOff`)
+- recent trip summaries (timestamp/action/phase/scope)
+
 ## Safe Sweep (GTK)
 
 In `Robot Monitoring`, the **Safe Sweep** panel allows controlled back-and-forth joint tests.

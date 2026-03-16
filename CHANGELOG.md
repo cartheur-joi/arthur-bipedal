@@ -18,6 +18,15 @@ All notable changes to this project are documented in this file.
 - Animation training safety polling now surfaces thermal/voltage alert counts and beeps on any guardrail alert.
 - CLI `--self-test` output now includes per-motor threshold context and thermal/voltage violation counts in summary.
 
+### Added (Safety Replay CLI)
+- Added `--safety-report` and `--safety-report-file <path>` commands in `joi-gtk/Program.cs`.
+- Reports now summarize parsed safety log lines, top events/actions/phases, top motors, guardrail hit counts, and recent safety trips.
+
+### Changed (GTK Compatibility)
+- Replaced deprecated GTK calls in `MainWindow`:
+  - `ScrolledWindow.AddWithViewport(...)` -> `Add(...)`
+  - `OverrideBackgroundColor(...)` -> CSS-provider based event-box background styling.
+
 ### Added (Safety)
 - Added a centralized motor `SafetyGate` in `joi-gtk/Services/RobotControlService.cs` for motion commands:
   - Runs motor-state checks before and after motion execution.
