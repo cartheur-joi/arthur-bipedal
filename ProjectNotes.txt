@@ -38,4 +38,6 @@ Arthur-Bipedal
     1334: Next start AT-001.
     1435: Just fixed the pocketsphinx package to include everything. Will add this first.
     1442: Speaking into the mic and having it repeat by Leena using my two packages is a success.
+    1549: AT-001, Session is ready to commence.
+    1657: Audible tones for 'start' and 'stop' animation training.
     
