@@ -37,6 +37,9 @@
     <None Include="Resources\animals.ico" Link="resources\animals.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="Resources\animals.svg" Link="resources\animals.svg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

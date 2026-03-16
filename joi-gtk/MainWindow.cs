@@ -60,8 +60,10 @@ public sealed class MainWindow : Window
 
     public MainWindow() : base("Arthur Bipedal Robot Control Panel")
     {
+        SetWmclass("arthur-bipedal", "ArthurBipedal");
         GtkWindowIconService.Apply(this);
         SetDefaultSize(1200, 700);
+        Resizable = false;
         BorderWidth = 12;
         _robot.SafetyGateTripped += OnSafetyGateTripped;
         DeleteEvent += (_, _) =>
@@ -98,16 +100,18 @@ public sealed class MainWindow : Window
         statusRow.PackStart(_statusLabel, false, false, 0);
         root.PackStart(statusRow, false, false, 0);
 
+        Frame consoleFrame = new("Console");
         ScrolledWindow scroll = new()
         {
             HscrollbarPolicy = PolicyType.Automatic,
-            VscrollbarPolicy = PolicyType.Automatic,
-            HeightRequest = 140
+            VscrollbarPolicy = PolicyType.Automatic
         };
         scroll.Add(_logView);
-        root.PackStart(scroll, false, false, 0);
+        consoleFrame.Add(scroll);
+        root.PackStart(consoleFrame, true, true, 0);
 
         SetLog(_log.ToString());
+        AppendLog($"[Icon] {GtkWindowIconService.LoadedIconPath}");
         AppendLog($"[Voice] {_narration.Status}");
     }
 
@@ -323,8 +327,10 @@ public sealed class MainWindow : Window
             {
                 TransientFor = this
             };
+            _robotMonitoringWindow.SetWmclass("arthur-bipedal", "ArthurBipedal");
             GtkWindowIconService.Apply(_robotMonitoringWindow);
             _robotMonitoringWindow.SetDefaultSize(1180, 760);
+            _robotMonitoringWindow.Resizable = false;
             _robotMonitoringWindow.Add(_monitoringFrame);
             _robotMonitoringWindow.DeleteEvent += (_, e) =>
             {

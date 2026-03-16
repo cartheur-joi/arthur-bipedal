@@ -27,8 +27,10 @@ public sealed class CameraWindow : Window
 
     public CameraWindow() : base("Robot Camera Feed")
     {
+        SetWmclass("arthur-bipedal", "ArthurBipedal");
         GtkWindowIconService.Apply(this);
         SetDefaultSize(900, 640);
+        Resizable = false;
         BorderWidth = 10;
         DeleteEvent += (_, e) =>
         {

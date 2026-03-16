@@ -36,10 +36,12 @@ public sealed class AnimationTrainingWindow : Window
 
     public AnimationTrainingWindow(RobotControlService robot) : base("Animation Training")
     {
+        SetWmclass("arthur-bipedal", "ArthurBipedal");
         GtkWindowIconService.Apply(this);
         _robot = robot;
         _training = new AnimationTrainingService(robot);
         SetDefaultSize(900, 560);
+        Resizable = false;
         BorderWidth = 10;
         DeleteEvent += (_, e) =>
         {

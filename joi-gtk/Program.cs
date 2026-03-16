@@ -121,7 +121,9 @@ internal static class Program
             return;
         }
 
+        GtkProcessIdentityService.Apply();
         Application.Init();
+        GtkWindowIconService.ApplyDefault();
         MainWindow window = new();
         window.ShowAll();
         Application.Run();
