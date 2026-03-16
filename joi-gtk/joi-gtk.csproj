@@ -5,8 +5,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AeonVoice" Version="0.1.6" />
-    <PackageReference Include="AeonVoice.Native" Version="0.1.6" GeneratePathProperty="true" />
+    <PackageReference Include="AeonVoice" Version="0.1.7" />
+    <PackageReference Include="AeonVoice.Native" Version="0.1.7" GeneratePathProperty="true" />
     <PackageReference Include="GtkSharp" Version="3.24.24.95" />
     <PackageReference Include="System.IO.Ports" Version="9.0.1" />
     <PackageReference Include="Supertoys.PocketSphinx" Version="1.0.3" />
