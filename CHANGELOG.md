@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased] - 2026-03-14
 
+### Changed (Stable Sitting Capture Storage)
+- Added CLI capture command in `joi-gtk`: `--capture-stable-sitting`.
+- Stable sitting capture now persists via `Microsoft.Data.Sqlite` in `db/positions.db` (no `Remember` dependency in this flow).
+- Replaced legacy `StablePosition` storage path for this feature with normalized pose tables:
+  - `pose_snapshot`
+  - `pose_snapshot_value`
+- Capture migration now removes stale `StablePosition` table in runtime DB and writes one snapshot row plus many motor-value rows.
+
+### Changed (Docs Cleanup)
+- Updated README path references from `dynamixel/` to `cartheur-animals-robot/`.
+- Updated README voice runtime notes to reflect bundled AeonVoice package auto-detection with optional env var overrides.
+- Documented stable sitting pose capture command and normalized DB schema in README.
+
 ### Added (Startup Body Awareness)
 - Added machine-readable body model policy at `joi-gtk/config/body-model.json` with parent-link, axis, region, and hard/soft limit metadata.
 - Added startup body-awareness calibration algorithm in `RobotControlService`:

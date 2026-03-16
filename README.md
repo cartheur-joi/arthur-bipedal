@@ -171,9 +171,9 @@ Packages:
 
 Runtime requirements:
 
-- `AEONVOICE_DATA_PATH` -> AeonVoice language data directory
-- `AEONVOICE_CONFIG_PATH` -> AeonVoice config directory
-- optional:
+- Bundled package data/config are auto-detected from app output.
+- Optional overrides:
+  - `AEONVOICE_DATA_PATH` and `AEONVOICE_CONFIG_PATH` for custom data/config locations
   - `ARTHUR_AEONVOICE_VOICE` (default: `Leena`)
   - `ARTHUR_SPEECH_ENABLED=0` to disable speech
 
@@ -215,10 +215,23 @@ Current mapping:
 - `roll <- Yc` (fallback `Ys`)
 - `yaw <- Zc` (fallback `Zs`)
 
+## Stable Sitting Position Capture (CLI)
+
+Capture a full current-pose snapshot and tag it as `Stable Sitting Position`:
+
+- `dotnet run --project joi-gtk/joi-gtk.csproj -- --capture-stable-sitting`
+
+Storage format (`db/positions.db`) uses normalized tables:
+
+- `pose_snapshot(id, pose_name, captured_at_utc, motor_count, note)`
+- `pose_snapshot_value(snapshot_id, motor_name, position_value)`
+
+This represents one pose as one snapshot row plus many per-motor rows.
+
 ## Solution Structure
 
 - `joi-animations/`: WinForms UI application (`Cartheur.Animation.Joi`)
-- `dynamixel/`: Motor control and persistence library (`Cartheur.Animals.Robot`)
+- `cartheur-animals-robot/`: Motor control and persistence library (`Cartheur.Animals.Robot`)
 - `images/`: Project images
 
 ## Runtime Flow
@@ -229,7 +242,7 @@ Current mapping:
 4. Motor dictionaries are collated (name, ID, location, limb groups).
 5. UI subforms (`TemplaterForm`, `ControlKeypad`, `AnimationTraining`, `RobotControl`) drive motor actions.
 
-## Core Motor Logic (`dynamixel/`)
+## Core Motor Logic (`cartheur-animals-robot/`)
 
 ### `MotorFunctions`
 
