@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900">
+  <defs>
+    <style>
+      .bg { fill: #f7fafc; }
+      .title { font: 700 40px sans-serif; fill: #0f172a; }
+      .sub { font: 500 18px sans-serif; fill: #334155; }
+      .silhouette { fill: #e2e8f0; stroke: #94a3b8; stroke-width: 2; }
+      .zone { stroke: #0f172a; stroke-width: 2; rx: 16; ry: 16; }
+      .head { fill: #c7f9f4; }
+      .left-arm { fill: #dbeafe; }
+      .right-arm { fill: #ffedd5; }
+      .core { fill: #ede9fe; }
+      .left-leg { fill: #dcfce7; }
+      .right-leg { fill: #fce7f3; }
+      .zone-title { font: 700 20px sans-serif; fill: #0f172a; }
+      .motor { font: 600 18px monospace; fill: #1e293b; }
+      .note { font: 500 16px sans-serif; fill: #334155; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="900"/>
+  <text class="title" x="36" y="54">Arthur Body Map (Training View)</text>
+  <text class="sub" x="36" y="84">Body-first grouping (robot perspective) for safe motion planning and quick operator checks</text>
+
+  <!-- Light body silhouette for orientation -->
+  <circle class="silhouette" cx="600" cy="170" r="56"/>
+  <rect class="silhouette" x="510" y="240" width="180" height="220" rx="60"/>
+  <rect class="silhouette" x="350" y="270" width="130" height="220" rx="50"/>
+  <rect class="silhouette" x="720" y="270" width="130" height="220" rx="50"/>
+  <rect class="silhouette" x="525" y="470" width="70" height="250" rx="30"/>
+  <rect class="silhouette" x="605" y="470" width="70" height="250" rx="30"/>
+
+  <!-- Head -->
+  <rect class="zone head" x="500" y="110" width="200" height="120"/>
+  <text class="zone-title" x="580" y="142" text-anchor="middle">HEAD</text>
+  <text class="motor" x="600" y="176" text-anchor="middle">head_y</text>
+  <text class="motor" x="600" y="204" text-anchor="middle">head_z</text>
+
+  <!-- Right Arm (robot perspective: appears on viewer left) -->
+  <rect class="zone right-arm" x="90" y="250" width="300" height="260"/>
+  <text class="zone-title" x="240" y="286" text-anchor="middle">RIGHT ARM</text>
+  <text class="motor" x="120" y="328">r_shoulder_y</text>
+  <text class="motor" x="120" y="358">r_shoulder_x</text>
+  <text class="motor" x="120" y="388">r_arm_z</text>
+  <text class="motor" x="120" y="418">r_elbow_y</text>
+
+  <!-- Left Arm (robot perspective: appears on viewer right) -->
+  <rect class="zone left-arm" x="810" y="250" width="300" height="260"/>
+  <text class="zone-title" x="960" y="286" text-anchor="middle">LEFT ARM</text>
+  <text class="motor" x="840" y="328">l_shoulder_y</text>
+  <text class="motor" x="840" y="358">l_shoulder_x</text>
+  <text class="motor" x="840" y="388">l_arm_z</text>
+  <text class="motor" x="840" y="418">l_elbow_y</text>
+
+  <!-- Core -->
+  <rect class="zone core" x="430" y="250" width="340" height="260"/>
+  <text class="zone-title" x="600" y="286" text-anchor="middle">CORE</text>
+  <text class="motor" x="470" y="328">bust_x</text>
+  <text class="motor" x="620" y="328">bust_y</text>
+  <text class="motor" x="470" y="358">abs_x</text>
+  <text class="motor" x="620" y="358">abs_y</text>
+  <text class="motor" x="470" y="388">abs_z</text>
+
+  <!-- Right Leg (robot perspective: appears on viewer left) -->
+  <rect class="zone right-leg" x="180" y="540" width="340" height="260"/>
+  <text class="zone-title" x="350" y="576" text-anchor="middle">RIGHT LEG</text>
+  <text class="motor" x="210" y="618">r_hip_x</text>
+  <text class="motor" x="210" y="648">r_hip_y</text>
+  <text class="motor" x="210" y="678">r_hip_z</text>
+  <text class="motor" x="210" y="708">r_knee_y</text>
+  <text class="motor" x="210" y="738">r_ankle_y</text>
+
+  <!-- Left Leg (robot perspective: appears on viewer right) -->
+  <rect class="zone left-leg" x="680" y="540" width="340" height="260"/>
+  <text class="zone-title" x="850" y="576" text-anchor="middle">LEFT LEG</text>
+  <text class="motor" x="710" y="618">l_hip_x</text>
+  <text class="motor" x="710" y="648">l_hip_y</text>
+  <text class="motor" x="710" y="678">l_hip_z</text>
+  <text class="motor" x="710" y="708">l_knee_y</text>
+  <text class="motor" x="710" y="738">l_ankle_y</text>
+
+  <text class="note" x="36" y="850">Use this map for training plans: choose body zone first, then select motors.</text>
+  <text class="note" x="36" y="874">Detailed joint positions still come from joi-gtk Robot Monitoring when needed.</text>
+</svg>
