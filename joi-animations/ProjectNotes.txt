@@ -1,7 +1,0 @@
-﻿December 2025
-Volatco-joi
-
-13.12.2025
-    1907: Shopping-around for robots who could use a bit of Volatco. This is one.
-    1918: Compacted the interactive-joi project to focus the efforts of Forth.
-    1944: reduced the footprint of vs2022; laser-like focus is at-hand.
