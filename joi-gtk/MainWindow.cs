@@ -62,7 +62,7 @@ public sealed class MainWindow : Window
     bool _sweepInProgress;
     int _eventBoxStyleSeed;
 
-    public MainWindow() : base("Arthur Bipedal - Linux Control Panel (GTK#)")
+    public MainWindow() : base("Arthur Bipedal Robot Control Panel")
     {
         SetDefaultSize(1200, 700);
         BorderWidth = 12;
@@ -83,7 +83,7 @@ public sealed class MainWindow : Window
         MenuBar menuBar = BuildMenuBar();
         root.PackStart(menuBar, false, false, 0);
 
-        Label title = new("Arthur Bipedal - Linux Control Panel");
+        Label title = new("Arthur Bipedal Robot Control Panel");
         title.Xalign = 0;
         root.PackStart(title, false, false, 0);
 
@@ -118,9 +118,7 @@ public sealed class MainWindow : Window
         walkRow.Attach(new Label("Timeout ms") { Xalign = 0 }, 6, 0, 1, 1);
         walkRow.Attach(_timeoutEntry, 7, 0, 1, 1);
         walkRow.Attach(_requireFootContact, 8, 0, 1, 1);
-        walkRow.Attach(CreateButton("Walk (Supervised)", (_, _) => ExecuteSupervisedWalk()), 9, 0, 1, 1);
-        walkRow.Attach(CreateButton("Walk 3 Cycles", (_, _) => ExecuteThreeCycleWalk()), 10, 0, 1, 1);
-        walkRow.Attach(CreateButton("Emergency Stop", (_, _) => RunAction("EmergencyStop", () => _robot.EmergencyStopLower())), 11, 0, 1, 1);
+        walkRow.Attach(CreateButton("Emergency Stop", (_, _) => RunAction("EmergencyStop", () => _robot.EmergencyStopLower())), 9, 0, 1, 1);
         root.PackStart(walkRow, false, false, 0);
 
         _monitoringFrame = BuildMonitoringPanel();

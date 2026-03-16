@@ -88,7 +88,6 @@ public sealed class AnimationTrainingWindow : Window
         _pauseTrainingButton.Sensitive = false;
         actionRow.PackStart(_pauseTrainingButton, false, false, 0);
         actionRow.PackStart(CreateButton("Stop && Save", (_, _) => StopAndSave()), false, false, 0);
-        actionRow.PackStart(CreateButton("Replay Phrase", (_, _) => ReplayPhrase()), false, false, 0);
         actionRow.PackStart(CreateButton("Voice ON", (_, _) => StartVoiceListener()), false, false, 0);
         actionRow.PackStart(CreateButton("Voice OFF", (_, _) => StopVoiceListener()), false, false, 0);
         actionRow.PackStart(CreateButton("Close", (_, _) => Close()), false, false, 0);
