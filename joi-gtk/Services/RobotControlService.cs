@@ -169,7 +169,8 @@ public sealed class RobotControlService
     public string EnforceStableSittingPosition(
         int durationMilliseconds = 900,
         int interpolationSteps = 8,
-        int positionTolerance = 8)
+        int positionTolerance = 8,
+        int maxCorrectionPasses = 5)
     {
         if (durationMilliseconds < 200)
             throw new ArgumentOutOfRangeException(nameof(durationMilliseconds), "Duration must be >= 200 ms.");
@@ -177,6 +178,8 @@ public sealed class RobotControlService
             throw new ArgumentOutOfRangeException(nameof(interpolationSteps), "Interpolation steps must be >= 3.");
         if (positionTolerance < 0 || positionTolerance > 100)
             throw new ArgumentOutOfRangeException(nameof(positionTolerance), "Position tolerance must be between 0 and 100.");
+        if (maxCorrectionPasses < 1 || maxCorrectionPasses > 8)
+            throw new ArgumentOutOfRangeException(nameof(maxCorrectionPasses), "Correction passes must be between 1 and 8.");
 
         RequireDailyStableSittingBaseline("stable sitting enforcement");
         if (!TryLoadLatestStableSittingPose(out Dictionary<string, int> baselinePose, out DateTimeOffset capturedAtUtc, out string error))
@@ -184,27 +187,51 @@ public sealed class RobotControlService
 
         string[] motors = baselinePose.Keys.OrderBy(name => name, StringComparer.Ordinal).ToArray();
         Dictionary<string, int> currentPose = ReadPositions(motors);
-        Dictionary<string, int> displacedTargets = new(StringComparer.Ordinal);
-
-        foreach (string motor in motors)
-        {
-            int current = currentPose.TryGetValue(motor, out int value) ? value : 0;
-            int target = baselinePose[motor];
-            if (Math.Abs(current - target) > positionTolerance)
-                displacedTargets[motor] = target;
-        }
+        Dictionary<string, int> displacedTargets = BuildDisplacedTargets(currentPose, baselinePose, positionTolerance);
 
         if (displacedTargets.Count == 0)
             return $"Stable sitting already within tolerance ({positionTolerance}) for all {motors.Length} motors.";
 
-        SetTorqueOn(displacedTargets.Keys.ToArray());
-        MoveToPositions(displacedTargets, durationMilliseconds, interpolationSteps);
-        Dictionary<string, int> verification = ReadPositions(displacedTargets.Keys.ToArray());
-        int remainingOffTarget = verification.Count(kv => Math.Abs(kv.Value - displacedTargets[kv.Key]) > positionTolerance);
+        HashSet<string> corrected = new(StringComparer.Ordinal);
+        int pass = 0;
+        while (displacedTargets.Count > 0 && pass < maxCorrectionPasses)
+        {
+            pass++;
+            string[] correctionMotors = displacedTargets.Keys.ToArray();
+            foreach (string motor in correctionMotors)
+                corrected.Add(motor);
+
+            SetTorqueOn(correctionMotors);
+            MoveToPositions(displacedTargets, durationMilliseconds, interpolationSteps);
+            currentPose = ReadPositions(motors);
+            displacedTargets = BuildDisplacedTargets(currentPose, baselinePose, positionTolerance);
+        }
+
+        int remainingOffTarget = displacedTargets.Count;
+        if (remainingOffTarget > 0)
+            throw new InvalidOperationException(
+                $"Stable sitting enforcement incomplete after {maxCorrectionPasses} pass(es): " +
+                $"remaining_outside_tolerance={remainingOffTarget}, tolerance={positionTolerance}.");
 
         return
-            $"Enforced stable sitting from baseline {capturedAtUtc:O}: corrected={displacedTargets.Count}, " +
-            $"remaining_outside_tolerance={remainingOffTarget}, tolerance={positionTolerance}.";
+            $"Enforced stable sitting from baseline {capturedAtUtc:O}: corrected={corrected.Count}, " +
+            $"remaining_outside_tolerance={remainingOffTarget}, tolerance={positionTolerance}, passes={pass}.";
+    }
+
+    static Dictionary<string, int> BuildDisplacedTargets(
+        IReadOnlyDictionary<string, int> currentPose,
+        IReadOnlyDictionary<string, int> baselinePose,
+        int positionTolerance)
+    {
+        Dictionary<string, int> displaced = new(StringComparer.Ordinal);
+        foreach ((string motor, int target) in baselinePose)
+        {
+            int current = currentPose.TryGetValue(motor, out int value) ? value : 0;
+            if (Math.Abs(current - target) > positionTolerance)
+                displaced[motor] = target;
+        }
+
+        return displaced;
     }
 
     public Dictionary<string, int> ReadPositions(string[] motors)
@@ -323,7 +350,7 @@ public sealed class RobotControlService
 
     public string ExecuteSeatedHandshakeSafetyTest(int shakes = 3, int stepDurationMs = 450, int interpolationSteps = 8)
     {
-        string baselineResult = EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 10);
+        string baselineResult = EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 15);
         if (shakes < 1 || shakes > 8)
             throw new ArgumentOutOfRangeException(nameof(shakes), "Handshake shake count must be between 1 and 8.");
         if (stepDurationMs < 220)

@@ -74,6 +74,11 @@ internal static class Program
             RunCaptureStableSittingPosition();
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--enforce-stable-sitting", StringComparison.OrdinalIgnoreCase))
+        {
+            RunEnforceStableSittingPosition();
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--safety-report", StringComparison.OrdinalIgnoreCase))
         {
             int topN = ParseTopCount(args, 1, 5);
@@ -348,6 +353,13 @@ internal static class Program
         Console.WriteLine(service.Initialize());
         Console.WriteLine(service.CaptureStableSittingPosition());
         Console.WriteLine($"STABLE_SITTING_FLAG={service.StableSittingPositionCaptured}");
+    }
+
+    static void RunEnforceStableSittingPosition()
+    {
+        RobotControlService service = new();
+        Console.WriteLine(service.Initialize());
+        Console.WriteLine(service.EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 15));
     }
 
     static void RunBodyCalibration(bool strict)
