@@ -16,7 +16,7 @@ public sealed class AnimationTrainingWindow : Window
     readonly StringBuilder _log = new();
 
     readonly ComboBoxText _armSelection = new();
-    readonly Entry _replayPhraseEntry = new() { Text = "raise your left arm" };
+    readonly Entry _replayPhraseEntry = new() { Text = "seated_handshake" };
     readonly Entry _stepIntervalEntry = new() { Text = "1000", WidthChars = 7 };
     readonly Label _statusLabel = new("Idle");
     readonly Label _voiceStatusLabel = new("Voice: off");
@@ -49,6 +49,8 @@ public sealed class AnimationTrainingWindow : Window
         };
 
         _voice.PhraseDetected += OnPhraseDetected;
+        _voice.ListenWindowStarted += OnListenWindowStarted;
+        _voice.ListenWindowEnded += OnListenWindowEnded;
         Shown += (_, _) => EnsureInitializedInBackground();
 
         Box root = new(Orientation.Vertical, 8);
@@ -68,18 +70,19 @@ public sealed class AnimationTrainingWindow : Window
 
         _armSelection.AppendText("Left Arm");
         _armSelection.AppendText("Right Arm");
-        _armSelection.Active = 0;
+        _armSelection.Active = 1;
         config.Attach(new Label("Arm") { Xalign = 0 }, 0, 1, 1, 1);
         config.Attach(_armSelection, 1, 1, 1, 1);
 
         config.Attach(new Label("Replay phrase") { Xalign = 0 }, 0, 2, 1, 1);
         config.Attach(_replayPhraseEntry, 1, 2, 2, 1);
+        config.Attach(new Label("Canonical AT-001 phrase: seated_handshake") { Xalign = 0 }, 0, 4, 3, 1);
 
         config.Attach(new Label("Capture ms") { Xalign = 0 }, 0, 3, 1, 1);
         config.Attach(_stepIntervalEntry, 1, 3, 1, 1);
         config.Attach(_statusLabel, 2, 3, 1, 1);
         config.Attach(_voiceStatusLabel, 2, 2, 1, 1);
-        config.Attach(_safetyStatusLabel, 1, 4, 2, 1);
+        config.Attach(_safetyStatusLabel, 1, 5, 2, 1);
         root.PackStart(config, false, false, 0);
 
         Box actionRow = new(Orientation.Horizontal, 8);
@@ -88,6 +91,7 @@ public sealed class AnimationTrainingWindow : Window
         _pauseTrainingButton.Sensitive = false;
         actionRow.PackStart(_pauseTrainingButton, false, false, 0);
         actionRow.PackStart(CreateButton("Stop && Save", (_, _) => StopAndSave()), false, false, 0);
+        actionRow.PackStart(CreateButton("Replay Phrase", (_, _) => ReplayPhrase()), false, false, 0);
         actionRow.PackStart(CreateButton("Voice ON", (_, _) => StartVoiceListener()), false, false, 0);
         actionRow.PackStart(CreateButton("Voice OFF", (_, _) => StopVoiceListener()), false, false, 0);
         actionRow.PackStart(CreateButton("Close", (_, _) => Close()), false, false, 0);
@@ -186,7 +190,7 @@ public sealed class AnimationTrainingWindow : Window
             _pauseTrainingButton.Sensitive = false;
             _pauseTrainingButton.Label = "Pause Training";
             _statusLabel.Text = "Training: saved";
-            BeepSignal();
+            PlayTrainingCompletedTone();
             AppendLog($"Session saved ({frameCount} frames).");
         }
         catch (Exception ex)
@@ -343,13 +347,13 @@ public sealed class AnimationTrainingWindow : Window
             string confidenceText = confidence >= 0 ? confidence.ToString("0.00") : "n/a";
             AppendLog($"Voice heard: \"{phrase}\" (p={confidenceText})");
 
-            if (normalized.Contains("begin animation training"))
+            if (ContainsCommandToken(normalized, "start") || normalized.Contains("begin animation training"))
             {
                 BeginTraining();
                 return;
             }
 
-            if (normalized.Contains("stop animation training"))
+            if (ContainsCommandToken(normalized, "stop") || normalized.Contains("stop animation training"))
             {
                 StopAndSave();
                 return;
@@ -361,6 +365,30 @@ public sealed class AnimationTrainingWindow : Window
                 ReplayPhrase();
             }
         });
+    }
+
+    void OnListenWindowStarted()
+    {
+        Application.Invoke(delegate
+        {
+            _voiceStatusLabel.Text = "Voice: recording (5s)";
+            PlayListenWindowTone();
+        });
+    }
+
+    void OnListenWindowEnded()
+    {
+        Application.Invoke(delegate
+        {
+            _voiceStatusLabel.Text = _voice.IsRunning ? "Voice: listening" : "Voice: off";
+            PlayListenWindowTone();
+        });
+    }
+
+    static bool ContainsCommandToken(string phrase, string token)
+    {
+        string[] parts = phrase.Split(new[] { ' ', '\t', '\r', '\n', '.', ',', ';', '!', '?', ':' }, StringSplitOptions.RemoveEmptyEntries);
+        return parts.Any(p => string.Equals(p, token, StringComparison.OrdinalIgnoreCase));
     }
 
     bool TryGetCaptureInterval(out int intervalMs)
@@ -416,6 +444,17 @@ public sealed class AnimationTrainingWindow : Window
         {
             try { Console.Beep(); } catch { }
         }
+    }
+
+    static void PlayListenWindowTone()
+    {
+        AudioCueService.PlayTone(1120, 130, repeats: 1);
+    }
+
+    static void PlayTrainingCompletedTone()
+    {
+        AudioCueService.PlayTone(1480, 140, repeats: 1);
+        AudioCueService.PlayTone(1860, 200, repeats: 1);
     }
 
     void LogFrame(string prefix, Dictionary<string, int> frame)

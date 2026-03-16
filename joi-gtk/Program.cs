@@ -3,6 +3,7 @@ using Gtk;
 using joi_gtk.Services;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -65,6 +66,16 @@ internal static class Program
         if (args.Length > 1 && string.Equals(args[0], "--speech-recog-file", StringComparison.OrdinalIgnoreCase))
         {
             RunSpeechRecognitionFile(args[1]);
+            return;
+        }
+        if (args.Length > 0 && string.Equals(args[0], "--speech-command-test", StringComparison.OrdinalIgnoreCase))
+        {
+            RunSpeechCommandWindowTest();
+            return;
+        }
+        if (args.Length > 1 && string.Equals(args[0], "--replay-trained-phrase", StringComparison.OrdinalIgnoreCase))
+        {
+            RunReplayTrainedPhrase(args[1]);
             return;
         }
         if (args.Length > 0 && string.Equals(args[0], "--body-calibrate", StringComparison.OrdinalIgnoreCase))
@@ -413,6 +424,93 @@ internal static class Program
         Console.WriteLine($"SPEECH_RECOG hypothesis={result.Hypothesis}");
         if (!string.IsNullOrWhiteSpace(result.StandardError))
             Console.WriteLine($"SPEECH_RECOG stderr={result.StandardError.Trim()}");
+    }
+
+    static void RunReplayTrainedPhrase(string replayPhrase)
+    {
+        RobotControlService service = new();
+        AnimationTrainingService training = new(service);
+        Console.WriteLine(service.Initialize());
+        int frameCount = training.ReplayLatest(replayPhrase, stepDurationMs: 700);
+        Console.WriteLine($"TRAINING_REPLAY phrase={replayPhrase} frames={frameCount} status=ok");
+    }
+
+    static void RunSpeechCommandWindowTest()
+    {
+        RobotSpeechRecognitionService speech = new();
+        Console.WriteLine($"SPEECH_CMD_TEST status={speech.Status}");
+        if (!speech.IsAvailable)
+            return;
+
+        string wavPath = Path.Combine(Path.GetTempPath(), $"arthur-speech-command-test-{Guid.NewGuid():N}.wav");
+        try
+        {
+            PlayListenWindowTone();
+            RecordFiveSecondWindow(wavPath);
+            PlayListenWindowTone();
+
+            SpeechRecognitionRunResult result = speech.RecognizeFileAsync(wavPath).GetAwaiter().GetResult();
+            string hypothesis = (result.Hypothesis ?? string.Empty).Trim();
+            string normalized = hypothesis.ToLowerInvariant();
+            string command = ContainsCommandToken(normalized, "start")
+                ? "START"
+                : ContainsCommandToken(normalized, "stop")
+                    ? "STOP"
+                    : "NONE";
+
+            Console.WriteLine($"SPEECH_CMD_TEST hypothesis={hypothesis}");
+            Console.WriteLine($"SPEECH_CMD_TEST confidence={result.Confidence:F4}");
+            Console.WriteLine($"SPEECH_CMD_TEST command={command}");
+            Console.WriteLine($"SPEECH_CMD_TEST success={result.Success}");
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(wavPath))
+                    File.Delete(wavPath);
+            }
+            catch
+            {
+                // Best effort cleanup.
+            }
+        }
+    }
+
+    static void RecordFiveSecondWindow(string wavPath)
+    {
+        using Process process = new();
+        process.StartInfo = new ProcessStartInfo
+        {
+            FileName = "arecord",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        process.StartInfo.ArgumentList.Add("-q");
+        process.StartInfo.ArgumentList.Add("-d");
+        process.StartInfo.ArgumentList.Add("5");
+        process.StartInfo.ArgumentList.Add("-f");
+        process.StartInfo.ArgumentList.Add("S16_LE");
+        process.StartInfo.ArgumentList.Add("-r");
+        process.StartInfo.ArgumentList.Add("16000");
+        process.StartInfo.ArgumentList.Add("-c");
+        process.StartInfo.ArgumentList.Add("1");
+        process.StartInfo.ArgumentList.Add(wavPath);
+        process.Start();
+        process.WaitForExit();
+    }
+
+    static bool ContainsCommandToken(string phrase, string token)
+    {
+        string[] parts = phrase.Split(new[] { ' ', '\t', '\r', '\n', '.', ',', ';', '!', '?', ':' }, StringSplitOptions.RemoveEmptyEntries);
+        return parts.Any(p => string.Equals(p, token, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static void PlayListenWindowTone()
+    {
+        AudioCueService.PlayTone(1120, 130, repeats: 1);
     }
 
     static int ParseTopCount(string[] args, int index, int fallback)

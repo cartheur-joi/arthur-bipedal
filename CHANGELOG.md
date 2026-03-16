@@ -16,6 +16,12 @@ All notable changes to this project are documented in this file.
   - `docs/tasks/animation-training-task-001-seated-handshake.md`,
   - `docs/sessions/2026-03-16-at-001-seated-handshake-session-01.md`.
 
+### Changed (Animation Training Replay Reliability)
+- `AnimationTrainingService.ReplayLatest(...)` now attempts seated baseline recovery after replay execution, including failure paths.
+- Added CLI command: `--replay-trained-phrase <phrase>` for deterministic training-driven replay runs.
+- Animation training UI now defaults to canonical AT-001 phrase `seated_handshake` with `Right Arm` selected and exposes an explicit `Replay Phrase` action.
+- Added Session 02 execution doc: `docs/sessions/2026-03-16-at-001-seated-handshake-session-02.md`.
+
 ### Changed (Stable Sitting Capture Storage)
 - Added CLI capture command in `joi-gtk`: `--capture-stable-sitting`.
 - Stable sitting capture now persists via `Microsoft.Data.Sqlite` in `db/positions.db` (no `Remember` dependency in this flow).
@@ -53,6 +59,16 @@ All notable changes to this project are documented in this file.
   - `--speech-recog-status`
   - `--speech-recog-file <audio-path>`
 - Added README documentation for scope policy, runtime requirements, and usage.
+
+### Changed (Animation Training Voice Commands)
+- `PocketSphinxVoiceCommandSource` now uses repo-scoped speech recognition windows (5-second capture/recognize loop) instead of direct global `pocketsphinx_continuous` process usage.
+- Added voice command syntax support in `AnimationTrainingWindow`:
+  - `START` begins animation training.
+  - `STOP` stops and saves animation training.
+- Added tone signaling behavior:
+  - same tone at recording-window start and recognition-window end,
+  - distinct tone when training save completes.
+- Added CLI test command: `--speech-command-test`.
 
 ### Added (Thermal + Voltage Guardrails)
 - Extended `joi-gtk/config/motor-overload-thresholds.json` to support safety defaults and per-motor guardrails for:

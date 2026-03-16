@@ -231,6 +231,17 @@ CLI checks:
   - `dotnet run --project joi-gtk/joi-gtk.csproj -- --speech-recog-status`
 - recognize an audio file (`.raw`/`.wav`):
   - `dotnet run --project joi-gtk/joi-gtk.csproj -- --speech-recog-file /absolute/path/to/audio.wav`
+- 5-second command-window test (`START` / `STOP`):
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --speech-command-test`
+
+Animation Training voice command syntax:
+- `START` -> begin training session
+- `STOP` -> stop and save training session
+
+Tone behavior for training voice windows:
+- one tone when 5-second recording window begins,
+- same tone when recognition window ends,
+- different completion tone when animation training is saved.
 
 ## MPU6050 Serial Integration (GTK)
 
@@ -285,6 +296,11 @@ Recommended start-of-day flow:
 1. Place robot in normal seated baseline posture.
 2. Run `dotnet run --project joi-gtk/joi-gtk.csproj -- --capture-stable-sitting`.
 3. Start training routines.
+
+Training replay CLI (policy-aligned):
+- Replay latest captured sequence for a phrase:
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --replay-trained-phrase seated_handshake`
+- Replay enforces seated baseline before motion and attempts seated recovery after replay.
 
 ## Solution Structure
 

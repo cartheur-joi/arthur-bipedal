@@ -1,44 +1,35 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Supertoys.PocketSphinx;
 
 namespace joi_gtk.Services;
 
 public sealed class PocketSphinxVoiceCommandSource : IDisposable
 {
-    Process _process;
+    readonly RobotSpeechRecognitionService _speech = new();
     CancellationTokenSource _cts;
-    Task _readerTask;
+    Task _listenTask;
 
     public event Action<string, double> PhraseDetected;
+    public event Action ListenWindowStarted;
+    public event Action ListenWindowEnded;
 
-    public bool IsRunning => _process != null && !_process.HasExited;
+    public bool IsRunning => _listenTask != null && !_listenTask.IsCompleted;
 
     public string Start()
     {
         if (IsRunning)
             return "Voice listener already running.";
+        if (!_speech.IsAvailable)
+            return $"Voice listener unavailable: {_speech.Status}";
 
         try
         {
             _cts = new CancellationTokenSource();
-            _process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "pocketsphinx_continuous",
-                    Arguments = "-inmic yes -logfn /dev/null -time yes",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-            _process.Start();
-            _readerTask = Task.Run(() => ReadLoop(_process, _cts.Token), _cts.Token);
-            return "Voice listener started (PocketSphinx + Supertoys parser).";
+            _listenTask = Task.Run(() => ListenLoop(_cts.Token), _cts.Token);
+            return "Voice listener started (PocketSphinx 5-second windows, commands: START/STOP).";
         }
         catch (Exception ex)
         {
@@ -55,8 +46,6 @@ public sealed class PocketSphinxVoiceCommandSource : IDisposable
         try
         {
             _cts?.Cancel();
-            if (_process != null && !_process.HasExited)
-                _process.Kill(true);
         }
         catch
         {
@@ -70,34 +59,101 @@ public sealed class PocketSphinxVoiceCommandSource : IDisposable
         return "Voice listener stopped.";
     }
 
-    async Task ReadLoop(Process process, CancellationToken cancellationToken)
+    async Task ListenLoop(CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested && process != null && !process.HasExited)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            string line = await process.StandardOutput.ReadLineAsync();
-            if (line == null)
+            string wavPath = Path.Combine(Path.GetTempPath(), $"arthur-voice-window-{Guid.NewGuid():N}.wav");
+            try
+            {
+                ListenWindowStarted?.Invoke();
+                await RecordWindowAsync(wavPath, seconds: 5, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                // Keep listener loop resilient to transient capture errors.
+            }
+            finally
+            {
+                ListenWindowEnded?.Invoke();
+            }
+
+            if (cancellationToken.IsCancellationRequested)
                 break;
 
-            string hypothesis = PocketSphinxOutputParser.ExtractHypothesis(line);
-            if (string.IsNullOrWhiteSpace(hypothesis))
-                continue;
+            try
+            {
+                SpeechRecognitionRunResult result = await _speech.RecognizeFileAsync(wavPath, cancellationToken).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(result.Hypothesis))
+                    PhraseDetected?.Invoke(result.Hypothesis, result.Confidence);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch
+            {
+                // Best effort: ignore recognition failures and continue loop.
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(wavPath))
+                        File.Delete(wavPath);
+                }
+                catch
+                {
+                    // Best-effort cleanup.
+                }
+            }
 
-            double confidence = PocketSphinxOutputParser.ExtractConfidence(line);
-            PhraseDetected?.Invoke(hypothesis, confidence);
+            try
+            {
+                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
+    }
+
+    static async Task RecordWindowAsync(string wavPath, int seconds, CancellationToken cancellationToken)
+    {
+        using Process process = new();
+        process.StartInfo = new ProcessStartInfo
+        {
+            FileName = "arecord",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        process.StartInfo.ArgumentList.Add("-q");
+        process.StartInfo.ArgumentList.Add("-d");
+        process.StartInfo.ArgumentList.Add(seconds.ToString());
+        process.StartInfo.ArgumentList.Add("-f");
+        process.StartInfo.ArgumentList.Add("S16_LE");
+        process.StartInfo.ArgumentList.Add("-r");
+        process.StartInfo.ArgumentList.Add("16000");
+        process.StartInfo.ArgumentList.Add("-c");
+        process.StartInfo.ArgumentList.Add("1");
+        process.StartInfo.ArgumentList.Add(wavPath);
+
+        process.Start();
+        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     void Cleanup()
     {
-        if (_process != null)
-        {
-            _process.Dispose();
-            _process = null;
-        }
-
         _cts?.Dispose();
         _cts = null;
-        _readerTask = null;
+        _listenTask = null;
     }
 
     public void Dispose()
