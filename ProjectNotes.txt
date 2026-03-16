@@ -30,4 +30,6 @@ Arthur-Bipedal
     1004: Looking for the old seating pose for start-position stability. In the meantime checking AeonVoice package and what is needed.
     1112: Was able to do a full-lifecycle test for AeonVoice and got a handle on using a shared dev machine and behavior for repo-only instances.
     1217: Decided to tackle the license type agreement in the package area that i didn't do last time.
+    1229: Need to find the "seated-position routine" for a stable place to begin when the robot sits askew.
+    1248: Created a new db routine and data-capture algorithm.
     
