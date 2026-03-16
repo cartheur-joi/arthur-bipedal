@@ -52,9 +52,9 @@
   <text class="motor" x="840" y="388">l_arm_z</text>
   <text class="motor" x="840" y="418">l_elbow_y</text>
 
-  <!-- Core -->
+  <!-- Chest -->
   <rect class="zone core" x="430" y="250" width="340" height="260"/>
-  <text class="zone-title" x="600" y="286" text-anchor="middle">CORE</text>
+  <text class="zone-title" x="600" y="286" text-anchor="middle">CHEST</text>
   <text class="motor" x="470" y="328">bust_x</text>
   <text class="motor" x="620" y="328">bust_y</text>
   <text class="motor" x="470" y="358">abs_x</text>
