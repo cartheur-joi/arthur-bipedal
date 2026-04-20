@@ -47,4 +47,6 @@ Arthur-Bipedal
     822: Purity is the focus of this work including the mounting of the new head. transmission begin.
     1146: Sanity in; testing and dev now.
     1200: Stable point has been found in animation replay.
+    1700: Personality addition to workspace inevitable.
+    1853: Added linux-x64 to pocketsphinx nuget and have them in here.
     
