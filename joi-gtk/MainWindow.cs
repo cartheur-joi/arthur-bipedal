@@ -147,6 +147,18 @@ public sealed class MainWindow : Window
         diagnosticFrame.Add(diagnosticRow);
         panel.PackStart(diagnosticFrame, false, false, 0);
 
+        Frame runtimeFrame = new("Runtime");
+        Box runtimeRow = new(Orientation.Horizontal, 8);
+        runtimeRow.BorderWidth = 6;
+        runtimeRow.PackStart(CreateButton("Full Self Check", (_, _) => RunAction("FullSelfCheck", RunFullSelfCheck)), false, false, 0);
+        runtimeRow.PackStart(CreateButton("Interactive Toys (Text)", (_, _) => RunAction("InteractiveToysOnce", () =>
+        {
+            using InteractiveToysRuntime runtime = new();
+            return runtime.RunSingleTurn("hello robot");
+        })), false, false, 0);
+        runtimeFrame.Add(runtimeRow);
+        panel.PackStart(runtimeFrame, false, false, 0);
+
         Frame safetyFrame = new("Safety");
         Box safetyRow = new(Orientation.Horizontal, 8);
         safetyRow.BorderWidth = 6;
@@ -316,6 +328,12 @@ public sealed class MainWindow : Window
     {
         Console.WriteLine();
         Console.WriteLine(line);
+    }
+
+    static string RunFullSelfCheck()
+    {
+        FullSelfCheckService service = new();
+        return service.Run();
     }
 
     void ShowRobotMonitor()

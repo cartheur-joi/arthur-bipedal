@@ -25,6 +25,11 @@ internal static class Program
             RunSelfTest();
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--full-self-check", StringComparison.OrdinalIgnoreCase))
+        {
+            RunFullSelfCheck();
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--probe", StringComparison.OrdinalIgnoreCase))
         {
             RunBusProbe();
@@ -224,6 +229,12 @@ internal static class Program
             $"voltage={voltageViolations} comm_errors={commErrors}");
         if (snapshot.Count(r => r.Location == "upper" && !r.CommunicationOk) > 0)
             ScanUpperBusBaud();
+    }
+
+    static void RunFullSelfCheck()
+    {
+        FullSelfCheckService service = new();
+        Console.WriteLine(service.Run());
     }
 
     static void ScanUpperBusBaud()
