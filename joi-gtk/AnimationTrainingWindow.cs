@@ -406,6 +406,7 @@ public sealed class AnimationTrainingWindow : Window
         {
             int frames = _training.ReplayLatest(_replayPhraseEntry.Text);
             _statusLabel.Text = "Replay: complete";
+            PlayTrainingCompletedTone();
             AppendLog($"Replay complete ({frames} frames) for phrase=\"{_replayPhraseEntry.Text}\".");
         }
         catch (Exception ex)

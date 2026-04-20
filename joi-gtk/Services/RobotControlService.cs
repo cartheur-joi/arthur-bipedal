@@ -987,6 +987,7 @@ public sealed class RobotControlService
         {
             using SqliteConnection connection = new($"Data Source={_stableSittingPositionPath}");
             connection.Open();
+            EnsurePoseSnapshotSchema(connection);
 
             using SqliteCommand command = connection.CreateCommand();
             command.CommandText =
@@ -1039,6 +1040,7 @@ public sealed class RobotControlService
         {
             using SqliteConnection connection = new($"Data Source={_stableSittingPositionPath}");
             connection.Open();
+            EnsurePoseSnapshotSchema(connection);
 
             long snapshotId;
             using (SqliteCommand snapshot = connection.CreateCommand())
@@ -1139,6 +1141,13 @@ public sealed class RobotControlService
             "CREATE INDEX IF NOT EXISTS idx_pose_snapshot_name_time " +
             "ON pose_snapshot(pose_name, captured_at_utc DESC);";
         command.ExecuteNonQuery();
+    }
+
+    static void EnsurePoseSnapshotSchema(SqliteConnection connection)
+    {
+        using SqliteTransaction tx = connection.BeginTransaction();
+        EnsurePoseSnapshotSchema(connection, tx);
+        tx.Commit();
     }
 
     static long InsertPoseSnapshot(

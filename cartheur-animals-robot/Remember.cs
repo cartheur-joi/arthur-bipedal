@@ -18,7 +18,7 @@ namespace Cartheur.Animals.Robot
         };
         public int AnimationID { get; set; }
         public string DataBaseTag { get; set; }
-        private string Path { get; set; }
+        private string BaseDirectoryPath { get; set; }
         public static string VerboseCommand { get; set; }
         public Dictionary<string, int> Positions { get; set; }
         public static Dictionary<string, Dictionary<string, int>> CommandPositions { get; set; }
@@ -33,7 +33,7 @@ namespace Cartheur.Animals.Robot
             Positions = new Dictionary<string, int>();
             if (CommandPositions == null)
                 CommandPositions = new Dictionary<string, Dictionary<string, int>>();
-            Path = Environment.CurrentDirectory;
+            BaseDirectoryPath = AppContext.BaseDirectory;
             CommandSyntax = new Syntax();
             // Retrieve all available data from the database and populate the dictionaries.
             CompileSyntax();
@@ -50,7 +50,7 @@ namespace Cartheur.Animals.Robot
             Positions = new Dictionary<string, int>();
             if (CommandPositions == null)
                 CommandPositions = new Dictionary<string, Dictionary<string, int>>();
-            Path = Environment.CurrentDirectory;
+            BaseDirectoryPath = AppContext.BaseDirectory;
         }
         /// <summary>
         /// Initializes the memory by creating dictionaries of all the motors as they are in their current positions.
@@ -82,9 +82,10 @@ namespace Cartheur.Animals.Robot
             {
                 // Store the ID, verbose command, and the technical positions.
                 string directory = MapPath(DataBaseTag);
-                using (SqliteConnection conn = new SqliteConnection(@"Data Source=" + Path + directory))
+                using (SqliteConnection conn = new SqliteConnection(@"Data Source=" + directory))
                 {
                     conn.Open();
+                    EnsureSchema(conn);
                     using (SqliteTransaction trans = conn.BeginTransaction())
                     using (SqliteCommand cmd = conn.CreateCommand())
                     {
@@ -113,11 +114,12 @@ namespace Cartheur.Animals.Robot
         public bool StorePosition(string positionType, Dictionary<string, int> positionData)
         {
             string directory = MapPath(DataBaseTag);
-            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + directory);
 
             using (connection)
             {
                 connection.Open();
+                EnsureSchema(connection);
                 foreach (KeyValuePair<string, int> kvp in positionData)
                 {
                     SqliteCommand command = new SqliteCommand
@@ -144,11 +146,12 @@ namespace Cartheur.Animals.Robot
         public bool StoreTrainingSequence(int sequence, string trainingSelection, Dictionary<string, int> trainingMotorSequence, string dataBaseTag)
         {
             string directory = MapPath(dataBaseTag);
-            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + directory);
 
             using (connection)
             {
                 connection.Open();
+                EnsureSchema(connection);
                 foreach (KeyValuePair<string, int> kvp in trainingMotorSequence)
                 {
                     SqliteCommand command = new SqliteCommand
@@ -196,10 +199,11 @@ namespace Cartheur.Animals.Robot
                 return false;
             }
             string directory = MapPath(DataBaseTag);
-            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + directory);
             using (connection)
             {
                 connection.Open();
+                EnsureSchema(connection);
                 SqliteCommand command = new SqliteCommand();
                 command.Connection = connection;
                 command.CommandText = "DELETE FROM " + tableName;
@@ -218,12 +222,13 @@ namespace Cartheur.Animals.Robot
             if (tableName == "" || !AllowedTables.Contains(tableName))
                 return null;
             string directory = MapPath(DataBaseTag);
-            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + directory);
             DataSet ds = new DataSet();
 
             using (connection)
             {
                 connection.Open();
+                EnsureSchema(connection);
                 SqliteCommand command = new SqliteCommand
                 {
                     Connection = connection,
@@ -244,10 +249,11 @@ namespace Cartheur.Animals.Robot
         {
             // SELECT PositionValue FROM StablePosition WHERE MotorName='r_hip_x'
             string directory = MapPath(dataBaseTag);
-            SqliteConnection connection = new SqliteConnection(@"Data Source=" + Path + directory);
+            SqliteConnection connection = new SqliteConnection(@"Data Source=" + directory);
             using (connection)
             {
                 connection.Open();
+                EnsureSchema(connection);
                 SqliteCommand command = new SqliteCommand
                 {
                     Connection = connection,
@@ -289,9 +295,10 @@ namespace Cartheur.Animals.Robot
                 // Recall the animation data.
                 string directory = MapPath(DataBaseTag);
                 DataSet ds = new DataSet();
-                using (SqliteConnection conn = new SqliteConnection(@"Data Source=" + Path + directory))
+                using (SqliteConnection conn = new SqliteConnection(@"Data Source=" + directory))
                 {
                     conn.Open();
+                    EnsureSchema(conn);
                     using (SqliteCommand cmd = conn.CreateCommand())
                     {
                         cmd.CommandText = "SELECT * FROM AnimationMemory WHERE VerboseCommand = @command";
@@ -344,8 +351,37 @@ namespace Cartheur.Animals.Robot
         }
         string MapPath(string path)
         {
-            string zebra = AppDomain.CurrentDomain.BaseDirectory.ToString();
-            return System.IO.Path.Combine(zebra, path);
+            if (string.IsNullOrWhiteSpace(path))
+                throw new InvalidOperationException("Database path cannot be empty.");
+
+            char[] separators = { '\\', '/' };
+            string[] segments = path.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+            string combined = segments.Length == 0
+                ? BaseDirectoryPath
+                : System.IO.Path.Combine(new[] { BaseDirectoryPath }.Concat(segments).ToArray());
+            return System.IO.Path.GetFullPath(combined);
+        }
+
+        static void EnsureSchema(SqliteConnection connection)
+        {
+            using SqliteCommand command = connection.CreateCommand();
+            command.CommandText =
+                "CREATE TABLE IF NOT EXISTS AnimationMemory (" +
+                "AnimationID INTEGER, " +
+                "VerboseCommand TEXT NOT NULL, " +
+                "Positions TEXT NOT NULL);" +
+                "CREATE TABLE IF NOT EXISTS StablePosition (" +
+                "PositionType TEXT NOT NULL, " +
+                "MotorName TEXT NOT NULL, " +
+                "PositionValue INTEGER NOT NULL);" +
+                "CREATE TABLE IF NOT EXISTS TrainingSequence (" +
+                "SequenceNumber INTEGER NOT NULL, " +
+                "TrainingType TEXT NOT NULL, " +
+                "Motor TEXT NOT NULL, " +
+                "Position INTEGER NOT NULL);" +
+                "CREATE INDEX IF NOT EXISTS idx_training_sequence_type_seq " +
+                "ON TrainingSequence(TrainingType, SequenceNumber);";
+            command.ExecuteNonQuery();
         }
 
         static void FillDataSet(SqliteCommand command, DataSet dataSet, string tableName)
