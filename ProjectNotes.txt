@@ -49,4 +49,6 @@ Arthur-Bipedal
     1200: Stable point has been found in animation replay.
     1700: Personality addition to workspace inevitable.
     1853: Added linux-x64 to pocketsphinx nuget and have them in here.
+    1858: Self check function added.
+    1903: Looking very complete and retticent now.
     
