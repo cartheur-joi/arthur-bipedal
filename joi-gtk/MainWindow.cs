@@ -34,6 +34,7 @@ public sealed class MainWindow : Window
     readonly Entry _sweepHighEntry = new() { Text = "620", WidthChars = 6 };
     readonly Entry _sweepDurationEntry = new() { Text = "1200", WidthChars = 6 };
     readonly Label _sweepStatusLabel = new("Sweep idle");
+    readonly ToggleButton _voiceRecognitionEchoToggle = new("Voice Recognition Echo OFF");
     readonly ListStore _monitorStore = new(
         typeof(string),
         typeof(string),
@@ -58,6 +59,8 @@ public sealed class MainWindow : Window
     CancellationTokenSource _sweepCancellation;
     bool _sweepInProgress;
     int _eventBoxStyleSeed;
+    PocketSphinxVoiceCommandSource _voiceRecognitionSource;
+    bool _voiceRecognitionToggleSync;
 
     public MainWindow() : base("Arthur Bipedal Robot Control Panel")
     {
@@ -71,8 +74,10 @@ public sealed class MainWindow : Window
         {
             StopSweep();
             StopMonitoring();
+            StopVoiceRecognitionEcho();
             _robotMonitoringWindow?.Destroy();
             _robot.SafetyGateTripped -= OnSafetyGateTripped;
+            _voiceRecognitionSource?.Dispose();
             if (_narration is IDisposable disposableNarration)
                 disposableNarration.Dispose();
             Application.Quit();
@@ -156,6 +161,8 @@ public sealed class MainWindow : Window
             using InteractiveToysRuntime runtime = new();
             return runtime.RunSingleTurn("hello robot");
         })), false, false, 0);
+        _voiceRecognitionEchoToggle.Toggled += (_, _) => OnVoiceRecognitionToggleChanged();
+        runtimeRow.PackStart(_voiceRecognitionEchoToggle, false, false, 0);
         runtimeFrame.Add(runtimeRow);
         panel.PackStart(runtimeFrame, false, false, 0);
 
@@ -334,6 +341,101 @@ public sealed class MainWindow : Window
     {
         FullSelfCheckService service = new();
         return service.Run();
+    }
+
+    void OnVoiceRecognitionToggleChanged()
+    {
+        if (_voiceRecognitionToggleSync)
+            return;
+
+        if (_voiceRecognitionEchoToggle.Active)
+            StartVoiceRecognitionEcho();
+        else
+            StopVoiceRecognitionEcho();
+    }
+
+    void StartVoiceRecognitionEcho()
+    {
+        _voiceRecognitionSource ??= new PocketSphinxVoiceCommandSource();
+        _voiceRecognitionSource.ListenWindowStarted -= OnVoiceListenWindowStarted;
+        _voiceRecognitionSource.ListenWindowEnded -= OnVoiceListenWindowEnded;
+        _voiceRecognitionSource.PhraseDetected -= OnVoicePhraseDetected;
+        _voiceRecognitionSource.ListenWindowStarted += OnVoiceListenWindowStarted;
+        _voiceRecognitionSource.ListenWindowEnded += OnVoiceListenWindowEnded;
+        _voiceRecognitionSource.PhraseDetected += OnVoicePhraseDetected;
+
+        string startStatus = _voiceRecognitionSource.Start();
+        _statusLabel.Text = "Voice Recognition: ON";
+        AppendLog($"[VoiceRecognition] {startStatus}");
+        WriteConsoleEntry($"[VoiceRecognition] {startStatus}");
+
+        if (_voiceRecognitionSource.IsRunning)
+        {
+            _voiceRecognitionEchoToggle.Label = "Voice Recognition Echo ON";
+            return;
+        }
+
+        _statusLabel.Text = "Voice Recognition: OFF";
+        _voiceRecognitionToggleSync = true;
+        _voiceRecognitionEchoToggle.Active = false;
+        _voiceRecognitionToggleSync = false;
+        _voiceRecognitionEchoToggle.Label = "Voice Recognition Echo OFF";
+    }
+
+    void StopVoiceRecognitionEcho()
+    {
+        if (_voiceRecognitionSource == null)
+        {
+            _voiceRecognitionEchoToggle.Label = "Voice Recognition Echo OFF";
+            return;
+        }
+
+        string stopStatus = _voiceRecognitionSource.Stop();
+        _statusLabel.Text = "Voice Recognition: OFF";
+        AppendLog($"[VoiceRecognition] {stopStatus}");
+        WriteConsoleEntry($"[VoiceRecognition] {stopStatus}");
+
+        _voiceRecognitionToggleSync = true;
+        _voiceRecognitionEchoToggle.Active = false;
+        _voiceRecognitionToggleSync = false;
+        _voiceRecognitionEchoToggle.Label = "Voice Recognition Echo OFF";
+    }
+
+    void OnVoiceListenWindowStarted()
+    {
+        Application.Invoke(delegate
+        {
+            _statusLabel.Text = "Voice Recognition: Listening";
+        });
+    }
+
+    void OnVoiceListenWindowEnded()
+    {
+        Application.Invoke(delegate
+        {
+            _statusLabel.Text = "Voice Recognition: Processing";
+        });
+    }
+
+    void OnVoicePhraseDetected(string phrase, double confidence)
+    {
+        string recognized = (phrase ?? string.Empty).Trim();
+        if (recognized.Length == 0)
+            return;
+
+        string line = $"[VoiceRecognition] phrase=\"{recognized}\" confidence={confidence:F3}";
+        Application.Invoke(delegate
+        {
+            _statusLabel.Text = "Voice Recognition: Phrase";
+            AppendLog(line);
+            WriteConsoleEntry(line);
+        });
+
+        if (!_narration.IsAvailable)
+            return;
+
+        string spoken = _personality.AdaptSpeech($"I heard {recognized}.", recognized);
+        _ = Task.Run(() => _narration.Announce(spoken));
     }
 
     void ShowRobotMonitor()
