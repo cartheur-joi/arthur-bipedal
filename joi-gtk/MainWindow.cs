@@ -18,6 +18,7 @@ public sealed class MainWindow : Window
     const string InitialLogMessage = "GTK# robot panel initialized.";
     readonly RobotControlService _robot = new();
     readonly IRobotNarrationService _narration = new RobotNarrationService();
+    readonly IPersonalityRuntime _personality = PersonalityRuntimeFactory.Create();
     readonly StringBuilder _log = new(InitialLogMessage);
     bool _clearedInitialLog;
 
@@ -112,6 +113,7 @@ public sealed class MainWindow : Window
 
         SetLog(_log.ToString());
         AppendLog($"[Voice] {_narration.Status}");
+        AppendLog($"[Personality] {_personality.Status}");
     }
 
     static Button CreateButton(string text, EventHandler onClick)
@@ -259,7 +261,8 @@ public sealed class MainWindow : Window
             _ => $"I will execute {actionName}."
         };
 
-        _ = Task.Run(() => _narration.Announce(phrase));
+        string spoken = _personality.AdaptSpeech(phrase, actionName);
+        _ = Task.Run(() => _narration.Announce(spoken));
     }
 
     void AnnounceCompletion(string actionName)
@@ -267,7 +270,8 @@ public sealed class MainWindow : Window
         if (!_narration.IsAvailable)
             return;
 
-        _ = Task.Run(() => _narration.Announce($"{actionName} completed."));
+        string spoken = _personality.AdaptSpeech($"{actionName} completed.", actionName);
+        _ = Task.Run(() => _narration.Announce(spoken));
     }
 
     void AnnounceFailure(string actionName)
@@ -275,7 +279,8 @@ public sealed class MainWindow : Window
         if (!_narration.IsAvailable)
             return;
 
-        _ = Task.Run(() => _narration.Announce($"{actionName} failed. Please check safety status."));
+        string spoken = _personality.AdaptSpeech($"{actionName} failed. Please check safety status.", actionName);
+        _ = Task.Run(() => _narration.Announce(spoken));
     }
 
     void AppendLog(string line)

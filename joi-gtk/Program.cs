@@ -58,6 +58,30 @@ internal static class Program
             RunVoiceTest(text);
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--personality-test", StringComparison.OrdinalIgnoreCase))
+        {
+            string text = args.Length > 1
+                ? string.Join(" ", args.Skip(1))
+                : "Initialize completed.";
+            RunPersonalityTest(text);
+            return;
+        }
+        if (args.Length > 0 && string.Equals(args[0], "--interactive-toys", StringComparison.OrdinalIgnoreCase))
+        {
+            RunInteractiveToys();
+            return;
+        }
+        if (args.Length > 1 && string.Equals(args[0], "--interactive-toys-once", StringComparison.OrdinalIgnoreCase))
+        {
+            string text = string.Join(" ", args.Skip(1));
+            RunInteractiveToysOnce(text);
+            return;
+        }
+        if (args.Length > 0 && string.Equals(args[0], "--interactive-toys-voice", StringComparison.OrdinalIgnoreCase))
+        {
+            RunInteractiveToysVoice();
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--speech-recog-status", StringComparison.OrdinalIgnoreCase))
         {
             RunSpeechRecognitionStatus();
@@ -427,12 +451,62 @@ internal static class Program
     static void RunVoiceTest(string text)
     {
         using RobotNarrationService voice = new();
+        IPersonalityRuntime personality = PersonalityRuntimeFactory.Create();
+        string spoken = personality.AdaptSpeech(text, text);
         Console.WriteLine($"VOICE status={voice.Status}");
+        Console.WriteLine($"PERSONALITY status={personality.Status}");
+        Console.WriteLine($"VOICE input={text}");
+        Console.WriteLine($"VOICE adapted={spoken}");
         if (!voice.IsAvailable)
             return;
 
-        voice.Announce(text);
+        voice.Announce(spoken);
         Console.WriteLine("VOICE spoke test phrase.");
+    }
+
+    static void RunPersonalityTest(string text)
+    {
+        IPersonalityRuntime personality = PersonalityRuntimeFactory.Create();
+        Console.WriteLine($"PERSONALITY name={personality.Name}");
+        Console.WriteLine($"PERSONALITY enabled={personality.IsEnabled}");
+        Console.WriteLine($"PERSONALITY status={personality.Status}");
+        Console.WriteLine($"PERSONALITY input={text}");
+        Console.WriteLine($"PERSONALITY output={personality.AdaptSpeech(text, text)}");
+    }
+
+    static void RunInteractiveToys()
+    {
+        using InteractiveToysRuntime runtime = new();
+        runtime.RunTextLoop();
+    }
+
+    static void RunInteractiveToysOnce(string text)
+    {
+        using InteractiveToysRuntime runtime = new();
+        Console.WriteLine($"INTERACTIVE_TOYS status={runtime.Status}");
+        Console.WriteLine($"INTERACTIVE_TOYS input={text}");
+        Console.WriteLine($"INTERACTIVE_TOYS output={runtime.RunSingleTurn(text)}");
+    }
+
+    static void RunInteractiveToysVoice()
+    {
+        using InteractiveToysRuntime runtime = new();
+        using CancellationTokenSource cts = new();
+        ConsoleCancelEventHandler handler = (_, e) =>
+        {
+            e.Cancel = true;
+            cts.Cancel();
+        };
+
+        Console.CancelKeyPress += handler;
+        try
+        {
+            runtime.RunVoiceLoop(cts.Token);
+        }
+        finally
+        {
+            Console.CancelKeyPress -= handler;
+        }
     }
 
     static void RunSpeechRecognitionStatus()
