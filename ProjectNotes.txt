@@ -55,4 +55,6 @@ Arthur-Bipedal
     949: Continuing. this time will enforce the AT-class plan group.
 03.07.2026
     1341: Returning from ERS-7, this is looking good.
+06.07.2026
+    2019: A baseline voice for Arthur has been prepared.
     
