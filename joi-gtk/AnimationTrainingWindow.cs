@@ -42,7 +42,7 @@ public sealed class AnimationTrainingWindow : Window
 
     public AnimationTrainingWindow(RobotControlService robot) : base("Animation Training")
     {
-        SetWmclass("arthur-bipedal", "ArthurBipedal");
+        GtkProcessIdentityService.ApplyWindowClass(this);
         GtkWindowIconService.Apply(this);
         _robot = robot;
         _training = new AnimationTrainingService(robot);

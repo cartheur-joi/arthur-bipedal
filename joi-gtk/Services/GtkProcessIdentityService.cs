@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Gtk;
 
 namespace joi_gtk.Services;
 
@@ -22,6 +23,23 @@ public static class GtkProcessIdentityService
         catch
         {
             // Identity hints are best-effort only.
+        }
+    }
+
+    public static void ApplyWindowClass(Window window)
+    {
+        if (window == null)
+            return;
+
+        try
+        {
+#pragma warning disable CS0612
+            window.SetWmclass("arthur-bipedal", "ArthurBipedal");
+#pragma warning restore CS0612
+        }
+        catch
+        {
+            // Best effort only.
         }
     }
 }

@@ -69,7 +69,7 @@ public sealed class MainWindow : Window
     public MainWindow() : base("Arthur Bipedal Robot Control Panel")
     {
         _jointVectorBridge = new JointVectorBridgeService(_robot);
-        SetWmclass("arthur-bipedal", "ArthurBipedal");
+        GtkProcessIdentityService.ApplyWindowClass(this);
         GtkWindowIconService.Apply(this);
         SetDefaultSize(1200, 700);
         Resizable = false;
@@ -567,7 +567,7 @@ public sealed class MainWindow : Window
             {
                 TransientFor = this
             };
-            _robotMonitoringWindow.SetWmclass("arthur-bipedal", "ArthurBipedal");
+            GtkProcessIdentityService.ApplyWindowClass(_robotMonitoringWindow);
             GtkWindowIconService.Apply(_robotMonitoringWindow);
             _robotMonitoringWindow.SetDefaultSize(1180, 760);
             _robotMonitoringWindow.Resizable = false;
