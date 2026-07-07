@@ -20,6 +20,14 @@ internal static class Program
         ConfigureNativeResolver();
         EnsureRuntimeFolders();
 
+        if (args.Length > 0 &&
+            (string.Equals(args[0], "--help", StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(args[0], "-h", StringComparison.OrdinalIgnoreCase)))
+        {
+            PrintHelp();
+            return;
+        }
+
         if (args.Length > 0 && string.Equals(args[0], "--self-test", StringComparison.OrdinalIgnoreCase))
         {
             RunSelfTest();
@@ -181,6 +189,52 @@ internal static class Program
         MainWindow window = new();
         window.ShowAll();
         Application.Run();
+    }
+
+    static void PrintHelp()
+    {
+        Console.WriteLine("Usage:");
+        Console.WriteLine("  dotnet run --project joi-gtk -- [flag] [arguments]");
+        Console.WriteLine();
+        Console.WriteLine("Robot diagnostics and motion:");
+        Console.WriteLine("  --self-test");
+        Console.WriteLine("  --full-self-check");
+        Console.WriteLine("  --probe");
+        Console.WriteLine("  --ankle-sweep");
+        Console.WriteLine("  --sweep <motor>");
+        Console.WriteLine("  --sweep-group <group>");
+        Console.WriteLine("  --imu-probe");
+        Console.WriteLine("  --body-calibrate [--non-strict]");
+        Console.WriteLine();
+        Console.WriteLine("Seated safety and recovery:");
+        Console.WriteLine("  --capture-stable-sitting");
+        Console.WriteLine("  --enforce-stable-sitting");
+        Console.WriteLine("  --seated-head-test");
+        Console.WriteLine("  --seated-handshake-test [shakes]");
+        Console.WriteLine("  --seated-left-arm-test");
+        Console.WriteLine();
+        Console.WriteLine("Joint vector messaging:");
+        Console.WriteLine("  --joint-vector-test <preset> [host] [port]");
+        Console.WriteLine("  --joint-vector-sequence [host] [port]");
+        Console.WriteLine();
+        Console.WriteLine("Speech and interaction:");
+        Console.WriteLine("  --voice-test [text]");
+        Console.WriteLine("  --personality-test [text]");
+        Console.WriteLine("  --interactive-toys");
+        Console.WriteLine("  --interactive-toys-once <text>");
+        Console.WriteLine("  --interactive-toys-voice");
+        Console.WriteLine("  --speech-recog-status");
+        Console.WriteLine("  --speech-recog-file <path>");
+        Console.WriteLine("  --speech-command-test");
+        Console.WriteLine("  --replay-trained-phrase <phrase>");
+        Console.WriteLine();
+        Console.WriteLine("Safety logs:");
+        Console.WriteLine("  --safety-report [topN]");
+        Console.WriteLine("  --safety-report-file <path> [topN]");
+        Console.WriteLine();
+        Console.WriteLine("Notes:");
+        Console.WriteLine("  Run without flags to start the GTK app when DISPLAY or WAYLAND is available.");
+        Console.WriteLine("  Use --help or -h to print this message.");
     }
 
     static bool CanStartGtkUi(out string reason)

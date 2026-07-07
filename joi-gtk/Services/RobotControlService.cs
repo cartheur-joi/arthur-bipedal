@@ -62,9 +62,9 @@ public sealed class RobotControlService
 
             int respondingLowerMotors = ScanLowerMotors();
             _initialized = true;
+            RefreshPresentMotorCacheFromDirectScan();
             IReadOnlyList<MotorMonitorReading> snapshot = ReadMotorMonitoringSnapshot(MotorFunctions.PresentLoadAlarm);
-            UpdatePresentMotorCache(snapshot);
-            int respondingUpperMotors = snapshot.Count(r => r.Location == "upper" && r.CommunicationOk);
+            int respondingUpperMotors = _presentMotors.Count(r => Motor.ReturnLocation(r) == "upper");
             int communicationErrors = snapshot.Count(r => !r.CommunicationOk);
             int overloads = snapshot.Count(r => r.Overload);
             return
@@ -257,6 +257,7 @@ public sealed class RobotControlService
             if (motors == null || motors.Length == 0)
                 throw new InvalidOperationException("ReadPositions requires one or more motors.");
 
+            EnsureMotorsPresent("ReadPositions", motors);
             return _motorControl.GetPresentPositions(motors);
         });
     }
@@ -268,6 +269,7 @@ public sealed class RobotControlService
             if (motors == null || motors.Length == 0)
                 throw new InvalidOperationException("SetTorqueOff requires one or more motors.");
 
+            EnsureMotorsPresent("SetTorqueOff", motors);
             _motorControl.SetTorqueOff(motors);
             return true;
         });
@@ -280,6 +282,7 @@ public sealed class RobotControlService
             if (motors == null || motors.Length == 0)
                 throw new InvalidOperationException("SetTorqueOn requires one or more motors.");
 
+            EnsureMotorsPresent("SetTorqueOn", motors);
             _motorControl.SetTorqueOn(motors);
             return true;
         });
@@ -292,6 +295,7 @@ public sealed class RobotControlService
             if (targets == null || targets.Count == 0)
                 throw new InvalidOperationException("MoveToPositions requires one or more target motors.");
 
+            EnsureMotorsPresent("MoveToPositions", targets.Keys);
             _motorControl.MoveMotorSequenceSmooth(targets, durationMilliseconds, interpolationSteps);
             return true;
         });
@@ -400,6 +404,8 @@ public sealed class RobotControlService
         string[] armMotors = ResolvePresentMotors(Limbic.RightArm, out string[] missingArmMotors);
         if (armMotors.Length == 0)
             return $"Skipped seated handshake: right arm motors not present on current robot scan [{string.Join(", ", missingArmMotors)}].";
+        if (missingArmMotors.Length > 0)
+            return $"Skipped seated handshake: right arm scan is incomplete [{string.Join(", ", missingArmMotors)}].";
 
         return ExecuteOnBus("SeatedHandshakeSafetyTest", () =>
         {
@@ -549,6 +555,8 @@ public sealed class RobotControlService
         string[] armMotors = ResolvePresentMotors(Limbic.LeftArm, out string[] missingArmMotors);
         if (armMotors.Length == 0)
             return $"Skipped seated left-arm test: left arm motors not present on current robot scan [{string.Join(", ", missingArmMotors)}].";
+        if (missingArmMotors.Length > 0)
+            return $"Skipped seated left-arm test: left arm scan is incomplete [{string.Join(", ", missingArmMotors)}].";
 
         return ExecuteOnBus("SeatedLeftArmSafetyTest", () =>
         {
@@ -1503,26 +1511,10 @@ public sealed class RobotControlService
         return string.Empty;
     }
 
-    void UpdatePresentMotorCache(IReadOnlyList<MotorMonitorReading> snapshot)
-    {
-        _presentMotors.Clear();
-        if (snapshot == null)
-            return;
-
-        foreach (MotorMonitorReading reading in snapshot)
-        {
-            if (reading.CommunicationOk)
-                _presentMotors.Add(reading.MotorName);
-        }
-    }
-
     HashSet<string> GetPresentMotorSetSnapshot()
     {
-        if (_presentMotors.Count > 0)
-            return new HashSet<string>(_presentMotors, StringComparer.Ordinal);
-
-        EnsureMaps();
-        return new HashSet<string>(Motor.MotorContext.Keys, StringComparer.Ordinal);
+        RefreshPresentMotorCacheFromDirectScan();
+        return new HashSet<string>(_presentMotors, StringComparer.Ordinal);
     }
 
     string[] ResolvePresentMotors(IEnumerable<string> requestedMotors, out string[] missingMotors)
@@ -1531,6 +1523,16 @@ public sealed class RobotControlService
         HashSet<string> present = GetPresentMotorSetSnapshot();
         missingMotors = normalized.Where(motor => !present.Contains(motor)).ToArray();
         return normalized.Where(motor => present.Contains(motor)).ToArray();
+    }
+
+    void EnsureMotorsPresent(string actionName, IEnumerable<string> requestedMotors)
+    {
+        ResolvePresentMotors(requestedMotors, out string[] missingMotors);
+        if (missingMotors.Length == 0)
+            return;
+
+        throw new InvalidOperationException(
+            $"{actionName} refused: requested motors are not present on the current robot scan [{string.Join(", ", missingMotors)}].");
     }
 
     void EnsureInitialized(string actionName)
@@ -1564,6 +1566,28 @@ public sealed class RobotControlService
             throw new InvalidOperationException("Initialize failed: no lower-body motors responded to scan on the lower bus.");
 
         return successCount;
+    }
+
+    void RefreshPresentMotorCacheFromDirectScan()
+    {
+        EnsureMaps();
+        _presentMotors.Clear();
+
+        foreach (string location in new[] { "lower", "upper" })
+        {
+            MotorFunctions.SetBaudRate(location);
+            int port = location == "upper" ? MotorFunctions.PortNumberUpper : MotorFunctions.PortNumberLower;
+            foreach ((string motorName, byte id) in Motor.MotorContext
+                         .Where(kv => string.Equals(Motor.ReturnLocation(kv.Key), location, StringComparison.Ordinal))
+                         .OrderBy(kv => kv.Value))
+            {
+                Dynamixel.ping(port, MotorFunctions.ProtocolVersion, id);
+                int txRxResult = Dynamixel.getLastTxRxResult(port, MotorFunctions.ProtocolVersion);
+                byte packetError = Dynamixel.getLastRxPacketError(port, MotorFunctions.ProtocolVersion);
+                if (txRxResult == MotorFunctions.ComSuccess && packetError == 0)
+                    _presentMotors.Add(motorName);
+            }
+        }
     }
 
     static void EnsureLastTxRxSuccessOnLower(string actionName)

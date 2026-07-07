@@ -149,9 +149,12 @@ Practical implications:
 
 Current guardrail behavior:
 
-- `RobotControlService` caches the present motor set from the initialization snapshot
+- `RobotControlService` now builds the present motor set from direct per-ID `ping`
+  responses on the configured upper and lower buses
 - seated test helpers skip unsupported limbs with a clear operator message instead of
   blindly driving the nominal full-body map
+- torque, read, and move entry points refuse requests for motors that are absent from
+  the current live scan
 - the TCP joint-vector bridge filters incoming frames to motors that are actually
   present on the current robot
 
