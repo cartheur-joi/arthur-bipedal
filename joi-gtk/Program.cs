@@ -215,6 +215,7 @@ internal static class Program
         Console.WriteLine("  --capture-stable-sitting");
         Console.WriteLine("  --enforce-stable-sitting");
         Console.WriteLine("  --safe-seated-recover");
+        Console.WriteLine("    prints omitted joints, clamped baseline joints, and delta-limited joints to the console");
         Console.WriteLine("  --seated-head-test");
         Console.WriteLine("  --seated-handshake-test [shakes]");
         Console.WriteLine("  --seated-left-arm-test");
