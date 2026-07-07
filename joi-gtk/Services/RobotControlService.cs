@@ -24,6 +24,7 @@ public sealed class RobotControlService
     readonly string _safetyEventLogPath;
     readonly string _stableSittingPositionPath;
     readonly BodyModelPolicy _bodyModelPolicy;
+    readonly SeatedHumanSafeProfile _seatedHumanSafeProfile;
     readonly string _bodyCalibrationReportPath;
     int _safetyOverloadThreshold = MotorFunctions.PresentLoadAlarm;
     int _safetyMaxTemperature = 70;
@@ -42,6 +43,7 @@ public sealed class RobotControlService
         _safetyEventLogPath = ResolveSafetyEventLogPath();
         _stableSittingPositionPath = ResolveStableSittingPositionPath();
         _bodyModelPolicy = LoadBodyModelPolicy();
+        _seatedHumanSafeProfile = LoadSeatedHumanSafeProfile();
         _bodyCalibrationReportPath = ResolveBodyCalibrationReportPath();
     }
 
@@ -234,6 +236,136 @@ public sealed class RobotControlService
             $"remaining_outside_tolerance={remainingOffTarget}, tolerance={positionTolerance}, passes={pass}.";
     }
 
+    public string ExecuteSafeSeatedRecover(
+        int durationMilliseconds = 1400,
+        int interpolationSteps = 12,
+        int positionTolerance = 18)
+    {
+        if (durationMilliseconds < 400)
+            throw new ArgumentOutOfRangeException(nameof(durationMilliseconds), "Duration must be >= 400 ms.");
+        if (interpolationSteps < 4)
+            throw new ArgumentOutOfRangeException(nameof(interpolationSteps), "Interpolation steps must be >= 4.");
+        if (positionTolerance < 0 || positionTolerance > 100)
+            throw new ArgumentOutOfRangeException(nameof(positionTolerance), "Position tolerance must be between 0 and 100.");
+
+        RequireDailyStableSittingBaseline("safe seated recovery");
+        if (!TryLoadLatestStableSittingPose(out Dictionary<string, int> baselinePose, out DateTimeOffset capturedAtUtc, out string error))
+            throw new InvalidOperationException($"Unable to run safe seated recovery: {error}");
+
+        HashSet<string> present = GetPresentMotorSetSnapshot();
+        string[] omittedMissing = baselinePose.Keys
+            .Where(motor => !present.Contains(motor))
+            .OrderBy(motor => motor, StringComparer.Ordinal)
+            .ToArray();
+
+        string[] conservativeAllowed = Limbic.LeftLeg
+            .Concat(Limbic.RightLeg)
+            .Concat(Limbic.Abdomen)
+            .Concat(Limbic.Bust)
+            .Concat(Limbic.Head)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        Dictionary<string, int> recoveryBaseline = new(StringComparer.Ordinal);
+        foreach (string motor in conservativeAllowed)
+        {
+            if (present.Contains(motor) && baselinePose.TryGetValue(motor, out int target))
+                recoveryBaseline[motor] = target;
+        }
+
+        string[] omittedConservative = baselinePose.Keys
+            .Where(motor => present.Contains(motor) && !recoveryBaseline.ContainsKey(motor))
+            .OrderBy(motor => motor, StringComparer.Ordinal)
+            .ToArray();
+
+        if (recoveryBaseline.Count == 0)
+            throw new InvalidOperationException(
+                "Safe seated recovery could not find any baseline motors that are both live-scanned and allowed by the conservative recovery profile.");
+
+        Dictionary<string, int> safeRecoveryBaseline = BuildProfileClampedBaseline(recoveryBaseline, _seatedHumanSafeProfile);
+        string clampSummary = BuildClampSummary(recoveryBaseline, safeRecoveryBaseline);
+        Dictionary<string, int> currentPose = ReadPositions(safeRecoveryBaseline.Keys.OrderBy(name => name, StringComparer.Ordinal).ToArray());
+        HashSet<string> corrected = new(StringComparer.Ordinal);
+        HashSet<string> deltaLimitedMotors = new(StringComparer.Ordinal);
+        const int maxRecoveryPasses = 4;
+
+        for (int pass = 0; pass < maxRecoveryPasses; pass++)
+        {
+            bool movedAny = false;
+            foreach (string[] phase in BuildSafeSeatedRecoverPhases())
+            {
+                Dictionary<string, int> phaseTargets = BuildRecoveryTargetsForPhase(
+                    phase,
+                    safeRecoveryBaseline,
+                    currentPose,
+                    positionTolerance,
+                    _seatedHumanSafeProfile);
+                if (phaseTargets.Count == 0)
+                    continue;
+
+                movedAny = true;
+                string[] phaseMotors = phaseTargets.Keys.OrderBy(name => name, StringComparer.Ordinal).ToArray();
+                foreach (string motor in phaseMotors)
+                {
+                    corrected.Add(motor);
+                    if (safeRecoveryBaseline.TryGetValue(motor, out int safeTarget) &&
+                        phaseTargets.TryGetValue(motor, out int phaseTarget) &&
+                        safeTarget != phaseTarget)
+                        deltaLimitedMotors.Add(motor);
+                }
+
+                try
+                {
+                    SetTorqueOn(phaseMotors);
+                    MoveToPositions(phaseTargets, durationMilliseconds, interpolationSteps);
+                    Dictionary<string, int> phasePose = ReadPositions(phaseMotors);
+                    foreach ((string motor, int position) in phasePose)
+                        currentPose[motor] = position;
+                }
+                finally
+                {
+                    try
+                    {
+                        SetTorqueOff(phaseMotors);
+                    }
+                    catch
+                    {
+                        // Preserve the original recovery outcome while still attempting torque-off.
+                    }
+                }
+            }
+
+            if (!movedAny)
+                break;
+        }
+
+        Dictionary<string, int> remaining = BuildDisplacedTargets(currentPose, safeRecoveryBaseline, positionTolerance);
+        string omittedSummary = BuildOmittedMotorSummary(omittedMissing, omittedConservative);
+        if (remaining.Count > 0)
+        {
+            string detail = string.Join(
+                ", ",
+                remaining
+                    .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                    .Take(5)
+                    .Select(kv =>
+                    {
+                        int current = currentPose.TryGetValue(kv.Key, out int c) ? c : 0;
+                        int delta = current - kv.Value;
+                        return $"{kv.Key}:current={current},target={kv.Value},delta={delta}";
+                    }));
+            throw new InvalidOperationException(
+                $"Safe seated recovery incomplete from baseline {capturedAtUtc:O}: corrected={corrected.Count}, " +
+                $"remaining_outside_tolerance={remaining.Count}, tolerance={positionTolerance}, omitted={omittedSummary}, " +
+                $"clamped={clampSummary}, delta_limited=[{FormatMotorList(deltaLimitedMotors)}], sample=[{detail}].");
+        }
+
+        return
+            $"Safe seated recovery completed from baseline {capturedAtUtc:O}: corrected={corrected.Count}, " +
+            $"recovery_scope={recoveryBaseline.Count}, tolerance={positionTolerance}, omitted={omittedSummary}, " +
+            $"clamped={clampSummary}, delta_limited=[{FormatMotorList(deltaLimitedMotors)}].";
+    }
+
     static Dictionary<string, int> BuildDisplacedTargets(
         IReadOnlyDictionary<string, int> currentPose,
         IReadOnlyDictionary<string, int> baselinePose,
@@ -248,6 +380,100 @@ public sealed class RobotControlService
         }
 
         return displaced;
+    }
+
+    static string[][] BuildSafeSeatedRecoverPhases()
+    {
+        return new[]
+        {
+            Limbic.LeftLeg.Concat(Limbic.RightLeg).ToArray(),
+            Limbic.Abdomen.Concat(Limbic.Bust).ToArray(),
+            Limbic.Head.ToArray()
+        };
+    }
+
+    static Dictionary<string, int> BuildProfileClampedBaseline(
+        IReadOnlyDictionary<string, int> recoveryBaseline,
+        SeatedHumanSafeProfile safeProfile)
+    {
+        Dictionary<string, int> clamped = new(StringComparer.Ordinal);
+        foreach ((string motor, int target) in recoveryBaseline)
+        {
+            SeatedJointSafetyLimits limits = ResolveSeatedJointSafetyLimits(safeProfile, motor);
+            clamped[motor] = Clamp(target, limits.Min ?? 0, limits.Max ?? 1023);
+        }
+
+        return clamped;
+    }
+
+    static Dictionary<string, int> BuildRecoveryTargetsForPhase(
+        IEnumerable<string> phaseMotors,
+        IReadOnlyDictionary<string, int> recoveryBaseline,
+        IReadOnlyDictionary<string, int> currentPose,
+        int positionTolerance,
+        SeatedHumanSafeProfile safeProfile)
+    {
+        Dictionary<string, int> phaseTargets = new(StringComparer.Ordinal);
+        foreach (string motor in phaseMotors)
+        {
+            if (!recoveryBaseline.TryGetValue(motor, out int target))
+                continue;
+
+            int current = currentPose.TryGetValue(motor, out int value) ? value : target;
+            int bounded = ApplySeatedSafeTarget(motor, target, current, safeProfile);
+            if (Math.Abs(current - bounded) > positionTolerance)
+                phaseTargets[motor] = bounded;
+        }
+
+        return phaseTargets;
+    }
+
+    static string BuildOmittedMotorSummary(
+        IReadOnlyList<string> omittedMissing,
+        IReadOnlyList<string> omittedConservative)
+    {
+        string missing = omittedMissing.Count == 0 ? "none" : string.Join(", ", omittedMissing);
+        string conservative = omittedConservative.Count == 0 ? "none" : string.Join(", ", omittedConservative);
+        return $"missing=[{missing}] conservative_skip=[{conservative}]";
+    }
+
+    static string BuildClampSummary(
+        IReadOnlyDictionary<string, int> recoveryBaseline,
+        IReadOnlyDictionary<string, int> safeRecoveryBaseline)
+    {
+        string[] clamped = recoveryBaseline
+            .Where(kv => safeRecoveryBaseline.TryGetValue(kv.Key, out int safeTarget) && safeTarget != kv.Value)
+            .Select(kv => $"{kv.Key}:{kv.Value}->{safeRecoveryBaseline[kv.Key]}")
+            .OrderBy(text => text, StringComparer.Ordinal)
+            .ToArray();
+        return clamped.Length == 0 ? "[none]" : $"[{string.Join(", ", clamped)}]";
+    }
+
+    static string FormatMotorList(IEnumerable<string> motors)
+    {
+        string[] normalized = motors?
+            .Where(motor => !string.IsNullOrWhiteSpace(motor))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(motor => motor, StringComparer.Ordinal)
+            .ToArray()
+            ?? Array.Empty<string>();
+        return normalized.Length == 0 ? "none" : string.Join(", ", normalized);
+    }
+
+    static int ApplySeatedSafeTarget(
+        string motor,
+        int requestedTarget,
+        int current,
+        SeatedHumanSafeProfile safeProfile)
+    {
+        SeatedJointSafetyLimits limits = ResolveSeatedJointSafetyLimits(safeProfile, motor);
+        int min = limits.Min ?? 0;
+        int max = limits.Max ?? 1023;
+        int maxDeltaPerMove = limits.MaxDeltaPerMove ?? 48;
+        int clampedTarget = Clamp(requestedTarget, min, max);
+        int minStep = current - maxDeltaPerMove;
+        int maxStep = current + maxDeltaPerMove;
+        return Clamp(clampedTarget, minStep, maxStep);
     }
 
     public Dictionary<string, int> ReadPositions(string[] motors)
@@ -1356,6 +1582,26 @@ public sealed class RobotControlService
         }
     }
 
+    static SeatedHumanSafeProfile LoadSeatedHumanSafeProfile()
+    {
+        string policyPath = ResolveSeatedHumanSafeProfilePath();
+        if (string.IsNullOrWhiteSpace(policyPath) || !File.Exists(policyPath))
+            return new SeatedHumanSafeProfile();
+
+        try
+        {
+            string json = File.ReadAllText(policyPath);
+            SeatedHumanSafeProfile profile = JsonSerializer.Deserialize<SeatedHumanSafeProfile>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return profile ?? new SeatedHumanSafeProfile();
+        }
+        catch
+        {
+            return new SeatedHumanSafeProfile();
+        }
+    }
+
     static string ResolveBodyModelPolicyPath()
     {
         string runtimeCopy = Path.Combine(AppContext.BaseDirectory, "config", "body-model.json");
@@ -1366,6 +1612,22 @@ public sealed class RobotControlService
             AppContext.BaseDirectory,
             "..", "..", "..", "..",
             "joi-gtk", "config", "body-model.json"));
+        if (File.Exists(workspacePath))
+            return workspacePath;
+
+        return string.Empty;
+    }
+
+    static string ResolveSeatedHumanSafeProfilePath()
+    {
+        string runtimeCopy = Path.Combine(AppContext.BaseDirectory, "config", "seated-human-safe-profile.json");
+        if (File.Exists(runtimeCopy))
+            return runtimeCopy;
+
+        string workspacePath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..",
+            "joi-gtk", "config", "seated-human-safe-profile.json"));
         if (File.Exists(workspacePath))
             return workspacePath;
 
@@ -1403,6 +1665,33 @@ public sealed class RobotControlService
         softMin = Clamp(softMin, hardMin, hardMax);
         softMax = Clamp(softMax, softMin, hardMax);
         return new ResolvedJointLimits(hardMin, hardMax, softMin, softMax);
+    }
+
+    static SeatedJointSafetyLimits ResolveSeatedJointSafetyLimits(SeatedHumanSafeProfile profile, string motorName)
+    {
+        SeatedJointSafetyLimits defaults = profile.Defaults ?? new SeatedJointSafetyLimits();
+        SeatedJointSafetyLimits limits = defaults;
+        if (profile.Joints != null &&
+            profile.Joints.TryGetValue(motorName, out SeatedJointSafetyLimits jointLimits) &&
+            jointLimits != null)
+        {
+            limits = new SeatedJointSafetyLimits
+            {
+                Min = jointLimits.Min ?? defaults.Min,
+                Max = jointLimits.Max ?? defaults.Max,
+                MaxDeltaPerMove = jointLimits.MaxDeltaPerMove ?? defaults.MaxDeltaPerMove
+            };
+        }
+
+        int min = Clamp(limits.Min ?? 0, 0, 4095);
+        int max = Clamp(limits.Max ?? 1023, min, 4095);
+        int maxDeltaPerMove = Clamp(limits.MaxDeltaPerMove ?? 48, 1, 1023);
+        return new SeatedJointSafetyLimits
+        {
+            Min = min,
+            Max = max,
+            MaxDeltaPerMove = maxDeltaPerMove
+        };
     }
 
     void PersistBodyCalibrationReport(BodyCalibrationReport report)
@@ -1663,6 +1952,20 @@ sealed class BodyJointLimits
     public int? HardMax { get; set; }
     public int? SoftMin { get; set; }
     public int? SoftMax { get; set; }
+}
+
+sealed class SeatedHumanSafeProfile
+{
+    public string ProfileVersion { get; set; } = "seated-human-safe-v1";
+    public SeatedJointSafetyLimits Defaults { get; set; } = new();
+    public Dictionary<string, SeatedJointSafetyLimits> Joints { get; set; } = new(StringComparer.Ordinal);
+}
+
+sealed class SeatedJointSafetyLimits
+{
+    public int? Min { get; set; }
+    public int? Max { get; set; }
+    public int? MaxDeltaPerMove { get; set; }
 }
 
 readonly record struct ResolvedJointLimits(int HardMin, int HardMax, int SoftMin, int SoftMax);

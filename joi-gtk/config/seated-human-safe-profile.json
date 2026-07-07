@@ -1,0 +1,30 @@
+{
+  "profileVersion": "seated-human-safe-v1",
+  "defaults": {
+    "min": 0,
+    "max": 1023,
+    "maxDeltaPerMove": 36
+  },
+  "joints": {
+    "head_z": { "min": 432, "max": 592, "maxDeltaPerMove": 28 },
+    "head_y": { "min": 472, "max": 584, "maxDeltaPerMove": 24 },
+
+    "bust_y": { "min": 472, "max": 560, "maxDeltaPerMove": 24 },
+    "bust_x": { "min": 468, "max": 556, "maxDeltaPerMove": 24 },
+    "abs_z": { "min": 456, "max": 568, "maxDeltaPerMove": 28 },
+    "abs_y": { "min": 468, "max": 556, "maxDeltaPerMove": 24 },
+    "abs_x": { "min": 468, "max": 556, "maxDeltaPerMove": 24 },
+
+    "l_hip_x": { "min": 456, "max": 568, "maxDeltaPerMove": 28 },
+    "l_hip_z": { "min": 432, "max": 592, "maxDeltaPerMove": 32 },
+    "l_hip_y": { "min": 416, "max": 624, "maxDeltaPerMove": 36 },
+    "l_knee_y": { "min": 448, "max": 704, "maxDeltaPerMove": 40 },
+    "l_ankle_y": { "min": 432, "max": 624, "maxDeltaPerMove": 32 },
+
+    "r_hip_x": { "min": 456, "max": 568, "maxDeltaPerMove": 28 },
+    "r_hip_z": { "min": 432, "max": 592, "maxDeltaPerMove": 32 },
+    "r_hip_y": { "min": 416, "max": 624, "maxDeltaPerMove": 36 },
+    "r_knee_y": { "min": 448, "max": 704, "maxDeltaPerMove": 40 },
+    "r_ankle_y": { "min": 432, "max": 624, "maxDeltaPerMove": 32 }
+  }
+}

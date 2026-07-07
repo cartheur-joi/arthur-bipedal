@@ -162,6 +162,11 @@ internal static class Program
             RunEnforceStableSittingPosition();
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--safe-seated-recover", StringComparison.OrdinalIgnoreCase))
+        {
+            RunSafeSeatedRecover();
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--safety-report", StringComparison.OrdinalIgnoreCase))
         {
             int topN = ParseTopCount(args, 1, 5);
@@ -209,6 +214,7 @@ internal static class Program
         Console.WriteLine("Seated safety and recovery:");
         Console.WriteLine("  --capture-stable-sitting");
         Console.WriteLine("  --enforce-stable-sitting");
+        Console.WriteLine("  --safe-seated-recover");
         Console.WriteLine("  --seated-head-test");
         Console.WriteLine("  --seated-handshake-test [shakes]");
         Console.WriteLine("  --seated-left-arm-test");
@@ -543,6 +549,16 @@ internal static class Program
             interpolationSteps: 10,
             positionTolerance: 25,
             maxCorrectionPasses: 7));
+    }
+
+    static void RunSafeSeatedRecover()
+    {
+        RobotControlService service = new();
+        Console.WriteLine(service.Initialize());
+        Console.WriteLine(service.ExecuteSafeSeatedRecover(
+            durationMilliseconds: 1400,
+            interpolationSteps: 12,
+            positionTolerance: 18));
     }
 
     static void RunBodyCalibration(bool strict)
