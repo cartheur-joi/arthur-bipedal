@@ -62,4 +62,5 @@ Arthur-Bipedal
     1120: Chores are nearly done. Testing to begin shortly.
     1238: Confirm the process is working.
     1338: Limiting the range of robotic movements to align with human-limits.
+    1342: Resume with this dotnet run --project joi-gtk -- --safe-seated-recover
     
