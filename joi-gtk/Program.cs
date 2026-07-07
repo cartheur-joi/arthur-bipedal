@@ -107,6 +107,21 @@ internal static class Program
             RunReplayTrainedPhrase(args[1]);
             return;
         }
+        if (args.Length > 0 && string.Equals(args[0], "--joint-vector-test", StringComparison.OrdinalIgnoreCase))
+        {
+            string preset = args.Length > 1 ? args[1] : "head-nod";
+            string host = args.Length > 2 ? args[2] : "127.0.0.1";
+            int port = ParseTopCount(args, 3, 9384);
+            RunJointVectorTest(preset, host, port);
+            return;
+        }
+        if (args.Length > 0 && string.Equals(args[0], "--joint-vector-sequence", StringComparison.OrdinalIgnoreCase))
+        {
+            string host = args.Length > 1 ? args[1] : "127.0.0.1";
+            int port = ParseTopCount(args, 2, 9384);
+            RunJointVectorSequence(host, port);
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--body-calibrate", StringComparison.OrdinalIgnoreCase))
         {
             bool strict = !args.Skip(1).Any(a => string.Equals(a, "--non-strict", StringComparison.OrdinalIgnoreCase));
@@ -122,6 +137,16 @@ internal static class Program
         if (args.Length > 0 && string.Equals(args[0], "--capture-stable-sitting", StringComparison.OrdinalIgnoreCase))
         {
             RunCaptureStableSittingPosition();
+            return;
+        }
+        if (args.Length > 0 && string.Equals(args[0], "--seated-head-test", StringComparison.OrdinalIgnoreCase))
+        {
+            RunSeatedHeadTest();
+            return;
+        }
+        if (args.Length > 0 && string.Equals(args[0], "--seated-left-arm-test", StringComparison.OrdinalIgnoreCase))
+        {
+            RunSeatedLeftArmTest();
             return;
         }
         if (args.Length > 0 && string.Equals(args[0], "--enforce-stable-sitting", StringComparison.OrdinalIgnoreCase))
@@ -261,8 +286,8 @@ internal static class Program
 
     static void RunBusProbe()
     {
-        string upperPort = Environment.GetEnvironmentVariable("ARTHUR_UPPER_PORT") ?? "/dev/ttyUSB1";
-        string lowerPort = Environment.GetEnvironmentVariable("ARTHUR_LOWER_PORT") ?? "/dev/ttyUSB0";
+        string upperPort = Environment.GetEnvironmentVariable("ARTHUR_UPPER_PORT") ?? "/dev/ttyUSB0";
+        string lowerPort = Environment.GetEnvironmentVariable("ARTHUR_LOWER_PORT") ?? "/dev/ttyUSB1";
         int upper = Dynamixel.portHandler(upperPort);
         int lower = Dynamixel.portHandler(lowerPort);
         Dynamixel.packetHandler();
@@ -441,6 +466,20 @@ internal static class Program
         Console.WriteLine($"STABLE_SITTING_FLAG={service.StableSittingPositionCaptured}");
     }
 
+    static void RunSeatedHeadTest()
+    {
+        RobotControlService service = new();
+        Console.WriteLine(service.Initialize());
+        Console.WriteLine(service.ExecuteSeatedHeadSafetyTest(stepDurationMs: 700, interpolationSteps: 10));
+    }
+
+    static void RunSeatedLeftArmTest()
+    {
+        RobotControlService service = new();
+        Console.WriteLine(service.Initialize());
+        Console.WriteLine(service.ExecuteSeatedLeftArmSafetyTest(stepDurationMs: 750, interpolationSteps: 10));
+    }
+
     static void RunEnforceStableSittingPosition()
     {
         RobotControlService service = new();
@@ -552,6 +591,96 @@ internal static class Program
         Console.WriteLine(service.Initialize());
         int frameCount = training.ReplayLatest(replayPhrase, stepDurationMs: 700);
         Console.WriteLine($"TRAINING_REPLAY phrase={replayPhrase} frames={frameCount} status=ok");
+    }
+
+    static void RunJointVectorTest(string preset, string host, int port)
+    {
+        if (string.IsNullOrWhiteSpace(preset))
+            preset = "head-nod";
+        if (string.IsNullOrWhiteSpace(host))
+            host = "127.0.0.1";
+
+        JointVectorFrame frame = BuildJointVectorPreset(preset);
+        Console.WriteLine($"JOINT_VECTOR_TEST preset={preset} host={host} port={port}");
+        Console.WriteLine(
+            $"JOINT_VECTOR_TEST seq={frame.SequenceNumber} duration_ms={frame.DurationMilliseconds} " +
+            $"steps={frame.InterpolationSteps} joints={string.Join(", ", frame.JointTargets.Select(kv => $"{kv.Key}={kv.Value}"))}");
+
+        using JointVectorTcpClient client = new(host, port);
+        client.Send(frame);
+        Console.WriteLine("JOINT_VECTOR_TEST status=sent");
+    }
+
+    static void RunJointVectorSequence(string host, int port)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+            host = "127.0.0.1";
+
+        List<JointVectorFrame> frames = new()
+        {
+            BuildJointVectorPreset("head-left"),
+            BuildJointVectorPreset("head-center"),
+            BuildJointVectorPreset("head-right"),
+            BuildJointVectorPreset("head-center"),
+            BuildJointVectorPreset("head-nod"),
+            BuildJointVectorPreset("head-center")
+        };
+
+        using JointVectorTcpClient client = new(host, port);
+        Console.WriteLine($"JOINT_VECTOR_SEQUENCE host={host} port={port} count={frames.Count}");
+        foreach (JointVectorFrame frame in frames)
+        {
+            client.Send(frame);
+            Console.WriteLine(
+                $"JOINT_VECTOR_SEQUENCE sent seq={frame.SequenceNumber} duration_ms={frame.DurationMilliseconds} " +
+                $"joints={string.Join(", ", frame.JointTargets.Select(kv => $"{kv.Key}={kv.Value}"))}");
+            Thread.Sleep(frame.DurationMilliseconds + 150);
+        }
+
+        Console.WriteLine("JOINT_VECTOR_SEQUENCE status=complete");
+    }
+
+    static JointVectorFrame BuildJointVectorPreset(string preset)
+    {
+        string normalized = (preset ?? string.Empty).Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            "head-nod" => new JointVectorFrame(
+                new Dictionary<string, int>
+                {
+                    ["head_y"] = 568
+                },
+                durationMilliseconds: 900,
+                interpolationSteps: 10,
+                sequenceNumber: 1),
+            "head-left" => new JointVectorFrame(
+                new Dictionary<string, int>
+                {
+                    ["head_z"] = 592
+                },
+                durationMilliseconds: 850,
+                interpolationSteps: 10,
+                sequenceNumber: 2),
+            "head-right" => new JointVectorFrame(
+                new Dictionary<string, int>
+                {
+                    ["head_z"] = 432
+                },
+                durationMilliseconds: 850,
+                interpolationSteps: 10,
+                sequenceNumber: 3),
+            "head-center" => new JointVectorFrame(
+                new Dictionary<string, int>
+                {
+                    ["head_z"] = 512,
+                    ["head_y"] = 512
+                },
+                durationMilliseconds: 950,
+                interpolationSteps: 10,
+                sequenceNumber: 4),
+            _ => throw new InvalidOperationException(
+                "Unknown joint vector preset. Use: head-nod, head-left, head-right, head-center.")
+        };
     }
 
     static void RunSpeechCommandWindowTest()

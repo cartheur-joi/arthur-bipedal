@@ -17,6 +17,7 @@ public sealed class MainWindow : Window
 {
     const string InitialLogMessage = "GTK# robot panel initialized.";
     readonly RobotControlService _robot = new();
+    readonly JointVectorBridgeService _jointVectorBridge;
     readonly IRobotNarrationService _narration = new RobotNarrationService();
     readonly IPersonalityRuntime _personality = PersonalityRuntimeFactory.Create();
     readonly StringBuilder _log = new(InitialLogMessage);
@@ -35,6 +36,9 @@ public sealed class MainWindow : Window
     readonly Entry _sweepDurationEntry = new() { Text = "1200", WidthChars = 6 };
     readonly Label _sweepStatusLabel = new("Sweep idle");
     readonly ToggleButton _voiceRecognitionEchoToggle = new("Voice Recognition Echo OFF");
+    readonly Entry _jointVectorBindEntry = new() { Text = "0.0.0.0", WidthChars = 12 };
+    readonly Entry _jointVectorPortEntry = new() { Text = "9384", WidthChars = 6 };
+    readonly Label _jointVectorBridgeStatusLabel = new("Vector bridge stopped");
     readonly ListStore _monitorStore = new(
         typeof(string),
         typeof(string),
@@ -64,19 +68,28 @@ public sealed class MainWindow : Window
 
     public MainWindow() : base("Arthur Bipedal Robot Control Panel")
     {
+        _jointVectorBridge = new JointVectorBridgeService(_robot);
         SetWmclass("arthur-bipedal", "ArthurBipedal");
         GtkWindowIconService.Apply(this);
         SetDefaultSize(1200, 700);
         Resizable = false;
         BorderWidth = 12;
         _robot.SafetyGateTripped += OnSafetyGateTripped;
+        _jointVectorBridge.StatusChanged += OnJointVectorBridgeStatusChanged;
+        _jointVectorBridge.FrameApplied += OnJointVectorFrameApplied;
+        _jointVectorBridge.Faulted += OnJointVectorBridgeFaulted;
         DeleteEvent += (_, _) =>
         {
             StopSweep();
             StopMonitoring();
             StopVoiceRecognitionEcho();
+            StopJointVectorBridge();
             _robotMonitoringWindow?.Destroy();
             _robot.SafetyGateTripped -= OnSafetyGateTripped;
+            _jointVectorBridge.StatusChanged -= OnJointVectorBridgeStatusChanged;
+            _jointVectorBridge.FrameApplied -= OnJointVectorFrameApplied;
+            _jointVectorBridge.Faulted -= OnJointVectorBridgeFaulted;
+            _jointVectorBridge.Dispose();
             _voiceRecognitionSource?.Dispose();
             if (_narration is IDisposable disposableNarration)
                 disposableNarration.Dispose();
@@ -149,6 +162,8 @@ public sealed class MainWindow : Window
         diagnosticRow.PackStart(CreateButton("Read IMU", (_, _) => RunAction("ReadIMU", () => _robot.ReadImuTelemetry())), false, false, 0);
         diagnosticRow.PackStart(CreateButton("Balance Step", (_, _) => RunAction("BalanceStep", () => _robot.ApplyStandingBalanceCompensationStep())), false, false, 0);
         diagnosticRow.PackStart(CreateButton("Read Lower Telemetry", (_, _) => RunAction("ReadLowerTelemetry", () => _robot.ReadLowerTelemetry())), false, false, 0);
+        diagnosticRow.PackStart(CreateButton("Seated Head Test", (_, _) => RunAction("SeatedHeadTest", () => _robot.ExecuteSeatedHeadSafetyTest())), false, false, 0);
+        diagnosticRow.PackStart(CreateButton("Seated Left Arm Test", (_, _) => RunAction("SeatedLeftArmTest", () => _robot.ExecuteSeatedLeftArmSafetyTest())), false, false, 0);
         diagnosticFrame.Add(diagnosticRow);
         panel.PackStart(diagnosticFrame, false, false, 0);
 
@@ -165,6 +180,19 @@ public sealed class MainWindow : Window
         runtimeRow.PackStart(_voiceRecognitionEchoToggle, false, false, 0);
         runtimeFrame.Add(runtimeRow);
         panel.PackStart(runtimeFrame, false, false, 0);
+
+        Frame vectorBridgeFrame = new("Open-R Joint Vector Bridge");
+        Box vectorBridgeRow = new(Orientation.Horizontal, 8);
+        vectorBridgeRow.BorderWidth = 6;
+        vectorBridgeRow.PackStart(new Label("Bind") { Xalign = 0 }, false, false, 0);
+        vectorBridgeRow.PackStart(_jointVectorBindEntry, false, false, 0);
+        vectorBridgeRow.PackStart(new Label("Port") { Xalign = 0 }, false, false, 0);
+        vectorBridgeRow.PackStart(_jointVectorPortEntry, false, false, 0);
+        vectorBridgeRow.PackStart(CreateButton("Start Bridge", (_, _) => StartJointVectorBridge()), false, false, 0);
+        vectorBridgeRow.PackStart(CreateButton("Stop Bridge", (_, _) => StopJointVectorBridge()), false, false, 0);
+        vectorBridgeRow.PackStart(_jointVectorBridgeStatusLabel, false, false, 12);
+        vectorBridgeFrame.Add(vectorBridgeRow);
+        panel.PackStart(vectorBridgeFrame, false, false, 0);
 
         Frame safetyFrame = new("Safety");
         Box safetyRow = new(Orientation.Horizontal, 8);
@@ -436,6 +464,94 @@ public sealed class MainWindow : Window
 
         string spoken = _personality.AdaptSpeech($"I heard {recognized}.", recognized);
         _ = Task.Run(() => _narration.Announce(spoken));
+    }
+
+    void StartJointVectorBridge()
+    {
+        try
+        {
+            if (!int.TryParse(_jointVectorPortEntry.Text, out int port) || port < 1 || port > 65535)
+            {
+                ValidationFail("Vector bridge port must be between 1 and 65535.");
+                return;
+            }
+
+            string bindAddress = _jointVectorBindEntry.Text?.Trim() ?? string.Empty;
+            string status = _jointVectorBridge.Start(bindAddress, port);
+            _statusLabel.Text = "JointVectorBridge: ON";
+            string line = $"[JointVectorBridge] {status}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
+        }
+        catch (Exception ex)
+        {
+            _statusLabel.Text = "JointVectorBridge: FAIL";
+            string line = $"[JointVectorBridge] ERROR: {ex.Message}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
+        }
+    }
+
+    void StopJointVectorBridge()
+    {
+        try
+        {
+            string status = _jointVectorBridge.Stop();
+            _statusLabel.Text = "JointVectorBridge: OFF";
+            string line = $"[JointVectorBridge] {status}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
+        }
+        catch (Exception ex)
+        {
+            _statusLabel.Text = "JointVectorBridge: FAIL";
+            string line = $"[JointVectorBridge] ERROR: {ex.Message}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
+        }
+    }
+
+    void OnJointVectorBridgeStatusChanged(string status)
+    {
+        Application.Invoke(delegate
+        {
+            _jointVectorBridgeStatusLabel.Text = status;
+        });
+    }
+
+    void OnJointVectorFrameApplied(JointVectorFrame frame)
+    {
+        if (frame == null)
+            return;
+
+        Application.Invoke(delegate
+        {
+            string motors = string.Join(
+                ", ",
+                frame.JointTargets
+                    .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                    .Select(kv => $"{kv.Key}={kv.Value}"));
+            string line =
+                $"[JointVectorBridge] Applied seq={frame.SequenceNumber} duration={frame.DurationMilliseconds}ms " +
+                $"steps={frame.InterpolationSteps} joints={frame.JointTargets.Count}: {motors}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
+            _statusLabel.Text = "JointVectorBridge: Frame Applied";
+        });
+    }
+
+    void OnJointVectorBridgeFaulted(Exception ex)
+    {
+        if (ex == null)
+            return;
+
+        Application.Invoke(delegate
+        {
+            _statusLabel.Text = "JointVectorBridge: FAIL";
+            string line = $"[JointVectorBridge] ERROR: {ex.Message}";
+            AppendLog(line);
+            WriteConsoleEntry(line);
+        });
     }
 
     void ShowRobotMonitor()

@@ -441,6 +441,118 @@ public sealed class RobotControlService
         });
     }
 
+    public string ExecuteSeatedHeadSafetyTest(int stepDurationMs = 650, int interpolationSteps = 10)
+    {
+        string baselineResult = EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 15);
+        if (stepDurationMs < 250)
+            throw new ArgumentOutOfRangeException(nameof(stepDurationMs), "Head test step duration must be >= 250 ms.");
+        if (interpolationSteps < 3 || interpolationSteps > 30)
+            throw new ArgumentOutOfRangeException(nameof(interpolationSteps), "Head test interpolation steps must be between 3 and 30.");
+
+        string[] headMotors = Limbic.Head.ToArray();
+        return ExecuteOnBus("SeatedHeadSafetyTest", () =>
+        {
+            _motorControl.SetTorqueOn(headMotors);
+            try
+            {
+                return ExecuteMotionWithSafety("SeatedHeadSafetyTest", headMotors, () =>
+                {
+                    Dictionary<string, int> origin = _motorControl.GetPresentPositions(headMotors);
+
+                    int lookLeft = ClampArmDelta(origin["head_z"], +48);
+                    int lookRight = ClampArmDelta(origin["head_z"], -48);
+                    int nodDown = ClampArmDelta(origin["head_y"], +28);
+
+                    Dictionary<string, int> leftPose = new()
+                    {
+                        ["head_z"] = lookLeft,
+                        ["head_y"] = origin["head_y"]
+                    };
+                    Dictionary<string, int> centerNodPose = new()
+                    {
+                        ["head_z"] = origin["head_z"],
+                        ["head_y"] = nodDown
+                    };
+                    Dictionary<string, int> rightPose = new()
+                    {
+                        ["head_z"] = lookRight,
+                        ["head_y"] = origin["head_y"]
+                    };
+
+                    try
+                    {
+                        _motorControl.MoveMotorSequenceSmooth(leftPose, stepDurationMs, interpolationSteps);
+                        _motorControl.MoveMotorSequenceSmooth(centerNodPose, stepDurationMs, interpolationSteps);
+                        _motorControl.MoveMotorSequenceSmooth(rightPose, stepDurationMs, interpolationSteps);
+                    }
+                    finally
+                    {
+                        _motorControl.MoveMotorSequenceSmooth(origin, stepDurationMs, interpolationSteps);
+                    }
+
+                    return $"{baselineResult} Seated head test completed with observed-origin return.";
+                });
+            }
+            finally
+            {
+                _motorControl.SetTorqueOff(headMotors);
+            }
+        });
+    }
+
+    public string ExecuteSeatedLeftArmSafetyTest(int stepDurationMs = 700, int interpolationSteps = 10)
+    {
+        string baselineResult = EnforceStableSittingPosition(durationMilliseconds: 900, interpolationSteps: 8, positionTolerance: 15);
+        if (stepDurationMs < 250)
+            throw new ArgumentOutOfRangeException(nameof(stepDurationMs), "Left arm test step duration must be >= 250 ms.");
+        if (interpolationSteps < 3 || interpolationSteps > 30)
+            throw new ArgumentOutOfRangeException(nameof(interpolationSteps), "Left arm test interpolation steps must be between 3 and 30.");
+
+        string[] armMotors = Limbic.LeftArm.ToArray();
+        return ExecuteOnBus("SeatedLeftArmSafetyTest", () =>
+        {
+            _motorControl.SetTorqueOn(armMotors);
+            try
+            {
+                return ExecuteMotionWithSafety("SeatedLeftArmSafetyTest", armMotors, () =>
+                {
+                    Dictionary<string, int> origin = _motorControl.GetPresentPositions(armMotors);
+
+                    Dictionary<string, int> reachPose = new()
+                    {
+                        ["l_shoulder_y"] = ClampArmDelta(origin["l_shoulder_y"], +42),
+                        ["l_shoulder_x"] = ClampArmDelta(origin["l_shoulder_x"], +36),
+                        ["l_arm_z"] = ClampArmDelta(origin["l_arm_z"], -28),
+                        ["l_elbow_y"] = ClampArmDelta(origin["l_elbow_y"], -44)
+                    };
+                    Dictionary<string, int> presentPose = new()
+                    {
+                        ["l_shoulder_y"] = ClampArmDelta(origin["l_shoulder_y"], +52),
+                        ["l_shoulder_x"] = ClampArmDelta(origin["l_shoulder_x"], +12),
+                        ["l_arm_z"] = ClampArmDelta(origin["l_arm_z"], -42),
+                        ["l_elbow_y"] = ClampArmDelta(origin["l_elbow_y"], -68)
+                    };
+
+                    try
+                    {
+                        _motorControl.MoveMotorSequenceSmooth(reachPose, stepDurationMs, interpolationSteps);
+                        _motorControl.MoveMotorSequenceSmooth(presentPose, stepDurationMs, interpolationSteps);
+                    }
+                    finally
+                    {
+                        _motorControl.MoveMotorSequenceSmooth(origin, stepDurationMs, interpolationSteps);
+                    }
+
+                    return $"{baselineResult} Seated left-arm test completed with observed-origin return.";
+                });
+            }
+            finally
+            {
+                _motorControl.SetTorqueOff(armMotors);
+            }
+        });
+    }
+
     public string EmergencyStopLower()
     {
         return ExecuteOnBus("EmergencyStop", () =>
@@ -1301,16 +1413,49 @@ public sealed class RobotControlService
             return;
 
         if (!hasUpper)
-            Environment.SetEnvironmentVariable("ARTHUR_UPPER_PORT", candidates[0]);
+        {
+            string upperCandidate = SelectPreferredCandidate(
+                candidates,
+                preferred: new[] { "/dev/ttyUSB0", "/dev/ttyACM0", "/dev/ttyUSB1", "/dev/ttyACM1" },
+                excluded: Array.Empty<string>());
+            if (!string.IsNullOrWhiteSpace(upperCandidate))
+                Environment.SetEnvironmentVariable("ARTHUR_UPPER_PORT", upperCandidate);
+        }
 
         if (!hasLower)
         {
-            string lowerCandidate = candidates[1];
             string upperAssigned = Environment.GetEnvironmentVariable("ARTHUR_UPPER_PORT") ?? string.Empty;
-            if (string.Equals(lowerCandidate, upperAssigned, StringComparison.Ordinal) && candidates.Length > 2)
-                lowerCandidate = candidates[2];
-            Environment.SetEnvironmentVariable("ARTHUR_LOWER_PORT", lowerCandidate);
+            string lowerCandidate = SelectPreferredCandidate(
+                candidates,
+                preferred: new[] { "/dev/ttyUSB1", "/dev/ttyACM1", "/dev/ttyUSB0", "/dev/ttyACM0" },
+                excluded: string.IsNullOrWhiteSpace(upperAssigned)
+                    ? Array.Empty<string>()
+                    : new[] { upperAssigned });
+            if (!string.IsNullOrWhiteSpace(lowerCandidate))
+                Environment.SetEnvironmentVariable("ARTHUR_LOWER_PORT", lowerCandidate);
         }
+    }
+
+    static string SelectPreferredCandidate(string[] candidates, string[] preferred, string[] excluded)
+    {
+        if (candidates == null || candidates.Length == 0)
+            return string.Empty;
+
+        HashSet<string> excludedSet = new(excluded ?? Array.Empty<string>(), StringComparer.Ordinal);
+        foreach (string preferredCandidate in preferred ?? Array.Empty<string>())
+        {
+            if (candidates.Contains(preferredCandidate, StringComparer.Ordinal) &&
+                !excludedSet.Contains(preferredCandidate))
+                return preferredCandidate;
+        }
+
+        foreach (string candidate in candidates)
+        {
+            if (!excludedSet.Contains(candidate))
+                return candidate;
+        }
+
+        return string.Empty;
     }
 
     void EnsureInitialized(string actionName)
