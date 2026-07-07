@@ -20,6 +20,7 @@ public sealed class RobotControlService
     readonly Dictionary<string, int> _motorOverloadThresholds = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> _motorMaxTemperatures = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> _motorMinVoltages = new(StringComparer.Ordinal);
+    readonly HashSet<string> _presentMotors = new(StringComparer.Ordinal);
     readonly string _safetyEventLogPath;
     readonly string _stableSittingPositionPath;
     readonly BodyModelPolicy _bodyModelPolicy;
@@ -62,6 +63,7 @@ public sealed class RobotControlService
             int respondingLowerMotors = ScanLowerMotors();
             _initialized = true;
             IReadOnlyList<MotorMonitorReading> snapshot = ReadMotorMonitoringSnapshot(MotorFunctions.PresentLoadAlarm);
+            UpdatePresentMotorCache(snapshot);
             int respondingUpperMotors = snapshot.Count(r => r.Location == "upper" && r.CommunicationOk);
             int communicationErrors = snapshot.Count(r => !r.CommunicationOk);
             int overloads = snapshot.Count(r => r.Overload);
@@ -73,6 +75,7 @@ public sealed class RobotControlService
     }
 
     public bool IsInitialized => _initialized;
+    public IReadOnlyCollection<string> PresentMotors => _presentMotors.ToArray();
     public bool StableSittingPositionCaptured => _stableSittingPositionCaptured;
     public bool HasDailyStableSittingBaseline => IsStableSittingBaselineCurrent();
     public int SafetyOverloadThreshold
@@ -294,6 +297,29 @@ public sealed class RobotControlService
         });
     }
 
+    public Dictionary<string, int> FilterTargetsToPresentMotors(
+        IReadOnlyDictionary<string, int> requestedTargets,
+        out string[] missingMotors)
+    {
+        if (requestedTargets == null)
+            throw new ArgumentNullException(nameof(requestedTargets));
+
+        HashSet<string> present = GetPresentMotorSetSnapshot();
+        missingMotors = requestedTargets.Keys
+            .Where(motor => !present.Contains(motor))
+            .OrderBy(motor => motor, StringComparer.Ordinal)
+            .ToArray();
+
+        Dictionary<string, int> filtered = new(StringComparer.Ordinal);
+        foreach ((string motorName, int positionValue) in requestedTargets)
+        {
+            if (present.Contains(motorName))
+                filtered[motorName] = positionValue;
+        }
+
+        return filtered;
+    }
+
     public string ExecuteWalkCycleSupervised(int cycles, int stepDurationMs, int interpolationSteps, int timeoutMs, bool requireSupportFootContact)
     {
         RequireDailyStableSittingBaseline("ExecuteSupervisedWalk");
@@ -371,7 +397,10 @@ public sealed class RobotControlService
         if (interpolationSteps < 3 || interpolationSteps > 30)
             throw new ArgumentOutOfRangeException(nameof(interpolationSteps), "Handshake interpolation steps must be between 3 and 30.");
 
-        string[] armMotors = Limbic.RightArm.ToArray();
+        string[] armMotors = ResolvePresentMotors(Limbic.RightArm, out string[] missingArmMotors);
+        if (armMotors.Length == 0)
+            return $"Skipped seated handshake: right arm motors not present on current robot scan [{string.Join(", ", missingArmMotors)}].";
+
         return ExecuteOnBus("SeatedHandshakeSafetyTest", () =>
         {
             _motorControl.SetTorqueOn(armMotors);
@@ -449,7 +478,10 @@ public sealed class RobotControlService
         if (interpolationSteps < 3 || interpolationSteps > 30)
             throw new ArgumentOutOfRangeException(nameof(interpolationSteps), "Head test interpolation steps must be between 3 and 30.");
 
-        string[] headMotors = Limbic.Head.ToArray();
+        string[] headMotors = ResolvePresentMotors(Limbic.Head, out string[] missingHeadMotors);
+        if (headMotors.Length == 0)
+            return $"Skipped seated head test: head motors not present on current robot scan [{string.Join(", ", missingHeadMotors)}].";
+
         return ExecuteOnBus("SeatedHeadSafetyTest", () =>
         {
             _motorControl.SetTorqueOn(headMotors);
@@ -458,39 +490,45 @@ public sealed class RobotControlService
                 return ExecuteMotionWithSafety("SeatedHeadSafetyTest", headMotors, () =>
                 {
                     Dictionary<string, int> origin = _motorControl.GetPresentPositions(headMotors);
-
-                    int lookLeft = ClampArmDelta(origin["head_z"], +48);
-                    int lookRight = ClampArmDelta(origin["head_z"], -48);
-                    int nodDown = ClampArmDelta(origin["head_y"], +28);
-
-                    Dictionary<string, int> leftPose = new()
-                    {
-                        ["head_z"] = lookLeft,
-                        ["head_y"] = origin["head_y"]
-                    };
-                    Dictionary<string, int> centerNodPose = new()
-                    {
-                        ["head_z"] = origin["head_z"],
-                        ["head_y"] = nodDown
-                    };
-                    Dictionary<string, int> rightPose = new()
-                    {
-                        ["head_z"] = lookRight,
-                        ["head_y"] = origin["head_y"]
-                    };
+                    bool hasHeadZ = origin.ContainsKey("head_z");
+                    bool hasHeadY = origin.ContainsKey("head_y");
+                    if (!hasHeadZ && !hasHeadY)
+                        return $"Skipped seated head test: no compatible head axes were present [{string.Join(", ", missingHeadMotors)}].";
 
                     try
                     {
-                        _motorControl.MoveMotorSequenceSmooth(leftPose, stepDurationMs, interpolationSteps);
-                        _motorControl.MoveMotorSequenceSmooth(centerNodPose, stepDurationMs, interpolationSteps);
-                        _motorControl.MoveMotorSequenceSmooth(rightPose, stepDurationMs, interpolationSteps);
+                        if (hasHeadZ)
+                        {
+                            int lookLeft = ClampArmDelta(origin["head_z"], +48);
+                            int lookRight = ClampArmDelta(origin["head_z"], -48);
+                            Dictionary<string, int> leftPose = new()
+                            {
+                                ["head_z"] = lookLeft
+                            };
+                            Dictionary<string, int> rightPose = new()
+                            {
+                                ["head_z"] = lookRight
+                            };
+                            _motorControl.MoveMotorSequenceSmooth(leftPose, stepDurationMs, interpolationSteps);
+                            _motorControl.MoveMotorSequenceSmooth(rightPose, stepDurationMs, interpolationSteps);
+                        }
+
+                        if (hasHeadY)
+                        {
+                            int nodDown = ClampArmDelta(origin["head_y"], +28);
+                            Dictionary<string, int> centerNodPose = new()
+                            {
+                                ["head_y"] = nodDown
+                            };
+                            _motorControl.MoveMotorSequenceSmooth(centerNodPose, stepDurationMs, interpolationSteps);
+                        }
                     }
                     finally
                     {
                         _motorControl.MoveMotorSequenceSmooth(origin, stepDurationMs, interpolationSteps);
                     }
 
-                    return $"{baselineResult} Seated head test completed with observed-origin return.";
+                    return $"{baselineResult} Seated head test completed with observed-origin return (axes={string.Join(",", headMotors)}).";
                 });
             }
             finally
@@ -508,7 +546,10 @@ public sealed class RobotControlService
         if (interpolationSteps < 3 || interpolationSteps > 30)
             throw new ArgumentOutOfRangeException(nameof(interpolationSteps), "Left arm test interpolation steps must be between 3 and 30.");
 
-        string[] armMotors = Limbic.LeftArm.ToArray();
+        string[] armMotors = ResolvePresentMotors(Limbic.LeftArm, out string[] missingArmMotors);
+        if (armMotors.Length == 0)
+            return $"Skipped seated left-arm test: left arm motors not present on current robot scan [{string.Join(", ", missingArmMotors)}].";
+
         return ExecuteOnBus("SeatedLeftArmSafetyTest", () =>
         {
             _motorControl.SetTorqueOn(armMotors);
@@ -517,6 +558,10 @@ public sealed class RobotControlService
                 return ExecuteMotionWithSafety("SeatedLeftArmSafetyTest", armMotors, () =>
                 {
                     Dictionary<string, int> origin = _motorControl.GetPresentPositions(armMotors);
+                    string[] required = { "l_shoulder_y", "l_shoulder_x", "l_arm_z", "l_elbow_y" };
+                    string[] unavailable = required.Where(motor => !origin.ContainsKey(motor)).ToArray();
+                    if (unavailable.Length > 0)
+                        return $"Skipped seated left-arm test: required left arm motors missing [{string.Join(", ", unavailable)}].";
 
                     Dictionary<string, int> reachPose = new()
                     {
@@ -1456,6 +1501,36 @@ public sealed class RobotControlService
         }
 
         return string.Empty;
+    }
+
+    void UpdatePresentMotorCache(IReadOnlyList<MotorMonitorReading> snapshot)
+    {
+        _presentMotors.Clear();
+        if (snapshot == null)
+            return;
+
+        foreach (MotorMonitorReading reading in snapshot)
+        {
+            if (reading.CommunicationOk)
+                _presentMotors.Add(reading.MotorName);
+        }
+    }
+
+    HashSet<string> GetPresentMotorSetSnapshot()
+    {
+        if (_presentMotors.Count > 0)
+            return new HashSet<string>(_presentMotors, StringComparer.Ordinal);
+
+        EnsureMaps();
+        return new HashSet<string>(Motor.MotorContext.Keys, StringComparer.Ordinal);
+    }
+
+    string[] ResolvePresentMotors(IEnumerable<string> requestedMotors, out string[] missingMotors)
+    {
+        string[] normalized = NormalizeMotorList(requestedMotors);
+        HashSet<string> present = GetPresentMotorSetSnapshot();
+        missingMotors = normalized.Where(motor => !present.Contains(motor)).ToArray();
+        return normalized.Where(motor => present.Contains(motor)).ToArray();
     }
 
     void EnsureInitialized(string actionName)

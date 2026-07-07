@@ -147,6 +147,14 @@ Practical implications:
 - head/neck logic should be based on observed IDs, especially `036`, rather than
   assuming the full nominal map is present
 
+Current guardrail behavior:
+
+- `RobotControlService` caches the present motor set from the initialization snapshot
+- seated test helpers skip unsupported limbs with a clear operator message instead of
+  blindly driving the nominal full-body map
+- the TCP joint-vector bridge filters incoming frames to motors that are actually
+  present on the current robot
+
 ## Binary Layout
 
 The serializer uses a small self-describing binary envelope:

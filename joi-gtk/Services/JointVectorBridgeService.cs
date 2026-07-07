@@ -216,14 +216,26 @@ public sealed class JointVectorBridgeService : IDisposable
             if (frame == null)
                 throw new ArgumentNullException(nameof(frame));
 
-            string[] motors = frame.JointTargets.Keys.OrderBy(name => name, StringComparer.Ordinal).ToArray();
+            Dictionary<string, int> filteredTargets = _robot.FilterTargetsToPresentMotors(frame.JointTargets, out string[] _);
+            if (filteredTargets.Count == 0)
+            {
+                _subject.AssertReady(ObserverName);
+                return;
+            }
+
+            string[] motors = filteredTargets.Keys.OrderBy(name => name, StringComparer.Ordinal).ToArray();
             _robot.SetTorqueOn(motors);
             _robot.MoveToPositions(
-                new Dictionary<string, int>(frame.JointTargets, StringComparer.Ordinal),
+                filteredTargets,
                 frame.DurationMilliseconds,
                 frame.InterpolationSteps);
 
-            Applied?.Invoke(frame);
+            Applied?.Invoke(new JointVectorFrame(
+                filteredTargets,
+                frame.DurationMilliseconds,
+                frame.InterpolationSteps,
+                frame.SequenceNumber,
+                frame.CreatedUtc));
             _subject.AssertReady(ObserverName);
         }
     }
