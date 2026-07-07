@@ -57,4 +57,7 @@ Arthur-Bipedal
     1341: Returning from ERS-7, this is looking good.
 06.07.2026
     2019: A baseline voice for Arthur has been prepared.
+07.07.2026
+    1033: Implementing what I saw in the analysis for ERS-7 Open-R.
+    1120: Chores are nearly done. Testing to begin shortly.
     
