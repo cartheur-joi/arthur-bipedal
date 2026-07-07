@@ -61,4 +61,5 @@ Arthur-Bipedal
     1033: Implementing what I saw in the analysis for ERS-7 Open-R.
     1120: Chores are nearly done. Testing to begin shortly.
     1238: Confirm the process is working.
+    1338: Limiting the range of robotic movements to align with human-limits.
     
