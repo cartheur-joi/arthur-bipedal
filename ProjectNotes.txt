@@ -65,4 +65,7 @@ Arthur-Bipedal
     1342: Resume with this dotnet run --project joi-gtk -- --safe-seated-recover
 08.07.2026
     1326: The idea of using the simulator to coordinate and orchestrate joints is a success.
+    1334: ready for the next step in sim-to-motions.
+    1548: Documented the local CoppeliaSim scene flow around scene/arthur.ttt.
+    1552: XML export confirms the imported scene already includes l_arm_z and r_arm_z.
     

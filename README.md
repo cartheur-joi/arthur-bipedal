@@ -310,6 +310,11 @@ Simulation-assisted authoring CLI:
   - `dotnet run --project joi-gtk/joi-gtk.csproj -- --export-sim-jvf path/to/session.json sim/seated-handshake.jvf`
 - Session JSON template:
   - `docs/templates/coppeliasim-session.template.json`
+- Local Arthur scene assets:
+  - `scene/arthur.ttt`
+  - `scene/sim_scene.simscene.xml`
+- Current process note:
+  - `docs/process/coppeliasim-integration.md`
 
 ## Solution Structure
 
