@@ -115,6 +115,16 @@ internal static class Program
             RunReplayTrainedPhrase(args[1]);
             return;
         }
+        if (args.Length > 2 && string.Equals(args[0], "--import-sim-training", StringComparison.OrdinalIgnoreCase))
+        {
+            RunImportSimulationTraining(args[1], args[2]);
+            return;
+        }
+        if (args.Length > 2 && string.Equals(args[0], "--export-sim-jvf", StringComparison.OrdinalIgnoreCase))
+        {
+            RunExportSimulationJointVectorLog(args[1], args[2]);
+            return;
+        }
         if (args.Length > 0 && string.Equals(args[0], "--joint-vector-test", StringComparison.OrdinalIgnoreCase))
         {
             string preset = args.Length > 1 ? args[1] : "head-nod";
@@ -234,6 +244,8 @@ internal static class Program
         Console.WriteLine("  --speech-recog-file <path>");
         Console.WriteLine("  --speech-command-test");
         Console.WriteLine("  --replay-trained-phrase <phrase>");
+        Console.WriteLine("  --import-sim-training <session.json> <phrase>");
+        Console.WriteLine("  --export-sim-jvf <session.json> <output.jvf>");
         Console.WriteLine();
         Console.WriteLine("Safety logs:");
         Console.WriteLine("  --safety-report [topN]");
@@ -664,6 +676,28 @@ internal static class Program
         Console.WriteLine($"TRAINING_REPLAY phrase={replayPhrase} frames={frameCount} status=ok");
     }
 
+    static void RunImportSimulationTraining(string jsonPath, string replayPhrase)
+    {
+        SimulationPoseImportService importer = new(ResolveWorkspaceRoot(), AppContext.BaseDirectory);
+        SimulationImportResult result = importer.ImportTrainingSequence(jsonPath, replayPhrase);
+        Console.WriteLine($"SIM_IMPORT status=ok source={result.SourcePath}");
+        Console.WriteLine($"SIM_IMPORT session={result.SessionName} frames={result.FrameCount} joints={result.UniqueJointCount}");
+        Console.WriteLine($"SIM_IMPORT training_type={result.TrainingType}");
+        if (result.UnknownJoints.Count > 0)
+            Console.WriteLine($"SIM_IMPORT unknown_joints={string.Join(", ", result.UnknownJoints)}");
+    }
+
+    static void RunExportSimulationJointVectorLog(string jsonPath, string outputPath)
+    {
+        SimulationPoseImportService importer = new(ResolveWorkspaceRoot(), AppContext.BaseDirectory);
+        SimulationImportResult result = importer.ExportJointVectorLog(jsonPath, outputPath);
+        Console.WriteLine($"SIM_EXPORT status=ok source={result.SourcePath}");
+        Console.WriteLine($"SIM_EXPORT session={result.SessionName} frames={result.FrameCount} joints={result.UniqueJointCount}");
+        Console.WriteLine($"SIM_EXPORT output={result.OutputPath}");
+        if (result.UnknownJoints.Count > 0)
+            Console.WriteLine($"SIM_EXPORT unknown_joints={string.Join(", ", result.UnknownJoints)}");
+    }
+
     static void RunJointVectorTest(string preset, string host, int port)
     {
         if (string.IsNullOrWhiteSpace(preset))
@@ -825,6 +859,21 @@ internal static class Program
     {
         string[] parts = phrase.Split(new[] { ' ', '\t', '\r', '\n', '.', ',', ';', '!', '?', ':' }, StringSplitOptions.RemoveEmptyEntries);
         return parts.Any(p => string.Equals(p, token, StringComparison.OrdinalIgnoreCase));
+    }
+
+    static string ResolveWorkspaceRoot()
+    {
+        DirectoryInfo current = new(AppContext.BaseDirectory);
+        while (current != null)
+        {
+            string readme = Path.Combine(current.FullName, "README.md");
+            string project = Path.Combine(current.FullName, "joi-gtk", "joi-gtk.csproj");
+            if (File.Exists(readme) && File.Exists(project))
+                return current.FullName;
+            current = current.Parent;
+        }
+
+        return AppContext.BaseDirectory;
     }
 
     static void PlayListenWindowTone()

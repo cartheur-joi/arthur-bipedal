@@ -1,0 +1,35 @@
+{
+  "sessionName": "seated_handshake_draft_01",
+  "defaultDurationMs": 700,
+  "defaultInterpolationSteps": 6,
+  "frames": [
+    {
+      "name": "start",
+      "jointTargets": {
+        "r_shoulder_y": 700,
+        "r_shoulder_x": 2048,
+        "r_arm_z": 1800,
+        "r_elbow_y": 2400
+      }
+    },
+    {
+      "name": "extend",
+      "durationMs": 850,
+      "jointTargets": {
+        "r_shoulder_y": 820,
+        "r_shoulder_x": 1980,
+        "r_arm_z": 1760,
+        "r_elbow_y": 2200
+      }
+    },
+    {
+      "name": "return",
+      "jointTargets": {
+        "r_shoulder_y": 700,
+        "r_shoulder_x": 2048,
+        "r_arm_z": 1800,
+        "r_elbow_y": 2400
+      }
+    }
+  ]
+}

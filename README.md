@@ -22,6 +22,7 @@ The formal execution anchor for pose/routine programming is now documented in:
 
 - `docs/epics/animation-training-epic.md`
 - `docs/process/daily-agent-prompts.md`
+- `docs/process/coppeliasim-integration.md`
 
 This epic defines the operating rule, milestones, acceptance criteria, and immediate
 backlog for making Animation Training the primary safe workflow.
@@ -301,6 +302,14 @@ Training replay CLI (policy-aligned):
 - Replay latest captured sequence for a phrase:
   - `dotnet run --project joi-gtk/joi-gtk.csproj -- --replay-trained-phrase seated_handshake`
 - Replay enforces seated baseline before motion and attempts seated recovery after replay.
+
+Simulation-assisted authoring CLI:
+- Import a CoppeliaSim-authored JSON session into `TrainingSequence` storage:
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --import-sim-training path/to/session.json seated_handshake`
+- Export the same JSON session to a `.jvf` joint-vector log:
+  - `dotnet run --project joi-gtk/joi-gtk.csproj -- --export-sim-jvf path/to/session.json sim/seated-handshake.jvf`
+- Session JSON template:
+  - `docs/templates/coppeliasim-session.template.json`
 
 ## Solution Structure
 
