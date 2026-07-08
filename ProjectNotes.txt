@@ -63,4 +63,6 @@ Arthur-Bipedal
     1238: Confirm the process is working.
     1338: Limiting the range of robotic movements to align with human-limits.
     1342: Resume with this dotnet run --project joi-gtk -- --safe-seated-recover
+08.07.2026
+    1326: The idea of using the simulator to coordinate and orchestrate joints is a success.
     
